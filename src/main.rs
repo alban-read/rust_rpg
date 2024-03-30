@@ -1,8 +1,14 @@
+use std::cell::RefCell;
+use std::io::Read;
 use image::{ImageBuffer, Rgb};
+use imageproc::drawing::{draw_filled_circle, draw_filled_rect, draw_hollow_rect, draw_antialiased_line_segment, draw_polygon_mut};
+use imageproc::pixelops::interpolate;
 use rayon::prelude::*;
 use lazy_static::lazy_static;
 use std::path::Path;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
+use imageproc::point::Point;
+use imageproc::rect::Rect;
 use noise::{NoiseFn, Perlin, Seedable};
 
 
@@ -103,6 +109,8 @@ impl EarthTileTrait for Tile {
 
 pub struct Grid {
     tiles: Vec<Vec<Tile>>,
+    image_buffer: Arc<Mutex<Option<ImageBuffer<Rgb<u8>, Vec<u8>>>>>,
+
 }
 
 impl Grid {
@@ -116,7 +124,7 @@ impl Grid {
             }
             tiles.push(row);
         }
-        Grid { tiles }
+        Grid { tiles, image_buffer: Arc::new(Mutex::new(None)), }
     }
 
 
@@ -198,8 +206,8 @@ impl Grid {
 
 
     pub fn generate_river(&mut self, initial_width: usize) {
-        let (start_x, start_y) = self.find_highest_point();
-        let (end_x, end_y) = self.find_boundary_water_tile();
+        // let (start_x, start_y) = self.find_highest_point();
+        // let (end_x, end_y) = self.find_boundary_water_tile();
     }
 
     pub fn generate_island(&mut self, seed: u32) {
@@ -319,7 +327,20 @@ impl Grid {
 
     pub fn generate_elevation_png(&self, filename: &str) {
         let size = self.tiles.len();
-        let mut img = ImageBuffer::new(size as u32, size as u32);
+        //let mut img = ImageBuffer::new(size as u32, size as u32);
+
+        let mut img = {
+            let mut buffer = self.image_buffer.lock().unwrap();
+            match &*buffer {
+                Some(buffer) => buffer.clone(),
+                None => {
+                    let new_buffer = ImageBuffer::new(size as u32, size as u32);
+                    *buffer = Some(new_buffer.clone());
+                    new_buffer
+                }
+            }
+        };
+
 
         img.enumerate_pixels_mut().par_bridge().for_each(|(x, y, pixel)| {
             let tile = &self.tiles[x as usize][y as usize];
@@ -348,11 +369,59 @@ impl Grid {
         });
 
         img.save(filename).unwrap();
+        *self.image_buffer.lock().unwrap() = Some(img);
     }
 
-// Add methods for manipulating and accessing the grid as needed
-}
 
+    pub fn draw_on_image_buffer(&self) {
+
+        // Lock the image buffer and clone it
+        let mut img = match &*self.image_buffer.lock().unwrap() {
+            Some(buffer) => buffer.clone(),
+            None => return, // If the image buffer is None, return early
+        };
+
+        // Draw a line
+        let start = (50, 50);
+        let end = (100, 100);
+        let color = Rgb([255, 0, 0]);
+        draw_antialiased_line_segment(&mut img, start, end, color, interpolate);
+
+        // Draw a filled rectangle
+        let top_left = (150, 150);
+        let bottom_right = (200, 200);
+        let color = Rgb([0, 255, 0]);
+        let rect = Rect::at(top_left.0, top_left.1).of_size((bottom_right.0 - top_left.0) as u32, (bottom_right.1 - top_left.1) as u32);
+
+        draw_filled_rect(&mut img, rect, color);
+
+        // Draw a hollow rectangle
+        let top_left = (250, 250);
+        let bottom_right = (300, 300);
+        let color = Rgb([0, 0, 255]);
+        draw_hollow_rect(&mut img, rect, color);
+
+        // Draw a filled circle
+        let center = (350, 350);
+        let radius = 50;
+        let color = Rgb([255, 255, 0]);
+        draw_filled_circle(&mut img, center, radius, color);
+
+        // Draw a triangle
+        let points = vec![(400, 400), (450, 450), (400, 500)];
+        let points: Vec<Point<i32>> = points.into_iter().map(|(x, y)| Point::new(x, y)).collect();
+
+        let color = Rgb([255, 0, 255]);
+        draw_polygon_mut(&mut img, &points, color);
+
+        // Save the modified image buffer
+        img.save("modified_image.png").unwrap();
+    }
+
+
+    // end of Grid struct
+
+}
 
 // define our grid in a way that can be shared across threads
 lazy_static! {
@@ -726,6 +795,7 @@ mod item_tests {
 // =================================================================================================
 // Characters
 
+#[derive(PartialEq, Debug)]
 pub enum CharacterType {
     Human,
     Elf,
@@ -810,7 +880,6 @@ impl Player {
     }
 }
 
-
 pub struct ComputerControlledCharacter {
     character: Character,
 }
@@ -822,7 +891,6 @@ impl ComputerControlledCharacter {
         }
     }
 }
-
 
 pub struct CharacterManager {
     characters: Vec<Character>,
@@ -891,6 +959,66 @@ impl NPC {
     }
 }
 
+#[cfg(test)]
+mod character_tests {
+    use super::*;
+
+    #[test]
+    fn test_character_creation() {
+        let character = Character::new("Player".to_string(), CharacterType::Human, 100, 10, 10, 10, 0, 0);
+        assert_eq!(*character.get_character_type(), CharacterType::Human);
+    }
+
+    #[test]
+    fn test_teleport_character() {
+        let mut character = Character::new("Player".to_string(), CharacterType::Human, 100, 10, 10, 10, 0, 0);
+        character.teleport_character(5, 5);
+        assert_eq!(character.x_position, 5);
+        assert_eq!(character.y_position, 5);
+    }
+
+    #[test]
+    fn test_player_creation() {
+        let player = Player::new("Player".to_string(), CharacterType::Human, 100, 10, 10, 10, 0, 0, 1, 0);
+        assert_eq!(player.get_level(), 1);
+        assert_eq!(player.get_experience(), 0);
+    }
+
+    #[test]
+    fn test_set_level() {
+        let mut player = Player::new("Player".to_string(), CharacterType::Human, 100, 10, 10, 10, 0, 0, 1, 0);
+        player.set_level(2);
+        assert_eq!(player.get_level(), 2);
+    }
+
+    #[test]
+    fn test_set_experience() {
+        let mut player = Player::new("Player".to_string(), CharacterType::Human, 100, 10, 10, 10, 0, 0, 1, 0);
+        player.set_experience(100);
+        assert_eq!(player.get_experience(), 100);
+    }
+
+    #[test]
+    fn test_computer_controlled_character_creation() {
+        let character = ComputerControlledCharacter::new("Oscar".to_string(), CharacterType::Orc, 100, 10, 10, 10, 0, 0);
+        assert_eq!(*character.character.get_character_type(), CharacterType::Orc);
+    }
+
+    #[test]
+    fn test_character_manager_creation() {
+        let character_manager = CharacterManager::new();
+        assert_eq!(character_manager.count_characters(), 0);
+    }
+
+    #[test]
+    fn test_add_character() {
+        let mut character_manager = CharacterManager::new();
+        let character = Character::new("Player".to_string(), CharacterType::Human, 100, 10, 10, 10, 0, 0);
+        character_manager.add_character(character);
+        assert_eq!(character_manager.count_characters(), 1);
+    }
+}
+
 
 fn main() {
     println!("Hello, world!");
@@ -898,4 +1026,9 @@ fn main() {
     grid.generate_island(17);
     grid.set_boundary_margin(5);
     grid.generate_elevation_png("elevation.png");
+    grid.draw_on_image_buffer();
+
+    // wait for the user to press a key before closing the window
+    println!("Press any key to exit...");
+    let _ = std::io::stdin().read(&mut [0u8]).unwrap();
 }
