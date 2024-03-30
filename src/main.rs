@@ -1,7 +1,8 @@
 use std::cell::RefCell;
+use std::fmt::Debug;
 use std::io::Read;
 use image::{ImageBuffer, Rgb};
-use imageproc::drawing::{draw_filled_circle, draw_filled_rect, draw_hollow_rect, draw_antialiased_line_segment, draw_polygon_mut, draw_filled_circle_mut};
+use imageproc::drawing::{draw_filled_circle, draw_filled_rect, draw_hollow_rect, draw_antialiased_line_segment, draw_polygon_mut, draw_filled_circle_mut, draw_cross};
 use imageproc::pixelops::interpolate;
 use rayon::prelude::*;
 use lazy_static::lazy_static;
@@ -609,44 +610,54 @@ impl Grid {
             return;
         }
 
-
         draw_filled_circle_mut(&mut img, center, radius, color);
-        img.save("modified_image.png").unwrap();
     }
 
-
-    pub fn draw_on_image_buffer(&self) {
+    pub fn do_draw_circle(&self, x:i32, y:i32) {
 
         // Lock the image buffer and clone it
-        let mut img = match &*self.image_buffer_bg.lock().unwrap() {
-            Some(buffer) => buffer.clone(),
-            None => return, // If the image buffer is None, return early
+        let mut img = match self.clone_and_lock_fg() {
+            Some(value) => value,
+            None => {
+                println!("Warning: The image buffer is None");
+                return;
+            }
         };
-
-        // display the image dimensions
+        let circle_color = Rgb([255, 255, 0]);
         let (width, height) = img.dimensions();
-        // println!("Image dimensions: {} x {}", width, height);
-
-
-        let center = (400, 400);
-        let radius = 50;
-        let color = Rgb([255, 255, 255]);
-
-        // display the circle center, radius, and color
-        println!("Circle center: {:?}, radius: {}, color: {:?}", center, radius, color);
-        // draw the circle on the image buffer
-
+        let center = (x, y);
+        let radius = 5;
         // Check if the circle is within the image dimensions
-        if center.0 + radius as i32 > width as i32 || center.1 + radius as i32 > height as i32 {
-            println!("Warning:The circle is outside the image dimensions");
+        if (center.0 + radius > width as i32) || (center.1 + radius > height as i32) {
+            println!("Warning: The circle is outside the image dimensions");
+            println!("Image dimensions: {} x {}", width, height);
+            println!("Circle center: {:?}, radius: {}, color: {:?}", center, radius, circle_color);
             return;
         }
 
-        draw_filled_circle_mut(&mut img, center, radius, color);
-        // save the modified image buffer
+        draw_filled_circle_mut(&mut img, center, radius, circle_color);
 
-        img.save("modified_image.png").unwrap();
+        *self.image_buffer_fg.lock().unwrap() = Some(img);
+
     }
+
+
+
+    // save fg image buffer to a png file
+    pub fn save_image_fg(&self, filename: &str) {
+        // Lock the image buffer and clone it
+        let mut img = match self.clone_and_lock_fg() {
+            Some(value) => value,
+            None => {
+                println!("Warning: The image buffer is None");
+                return;
+            }
+        };
+
+        // Save the image buffer to a file
+        img.save(filename).unwrap();
+    }
+
 
 
 // end of Grid struct
@@ -806,7 +817,7 @@ mod tile_tests {
 // Items
 
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct UsefulItem {
     name: String,
     use_value: u32,
@@ -831,12 +842,14 @@ impl UsefulItem {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct FoodItem {
     name: String,
     nutritional_value: u32,
     // Add more properties as needed
 }
+
+// derive debug for food item
 
 impl FoodItem {
     pub fn new(name: String, nutritional_value: u32) -> Self {
@@ -845,6 +858,12 @@ impl FoodItem {
             nutritional_value,
         }
     }
+
+    // debug for food item
+    pub fn as_debug(&self) -> &dyn std::fmt::Debug {
+        self
+    }
+
 
     // Add getter methods to access the properties
     pub fn get_name(&self) -> &String {
@@ -857,12 +876,21 @@ impl FoodItem {
 }
 
 pub trait ItemTrait {
+    fn as_debug(&self) -> &dyn std::fmt::Debug;
     fn get_name(&self) -> &String;
     fn get_use_value(&self) -> u32;
     fn get_nutritional_value(&self) -> u32;
+    // show item (on display)
+    fn show_item(&self) {
+        println!("Item: {}", self.get_name());
+    }
 }
 
 impl ItemTrait for FoodItem {
+    fn as_debug(&self) -> &dyn std::fmt::Debug {
+        self
+    }
+
     fn get_name(&self) -> &String {
         &self.name
     }
@@ -877,6 +905,15 @@ impl ItemTrait for FoodItem {
 }
 
 impl ItemTrait for UsefulItem {
+    fn as_debug(&self) -> &dyn Debug {
+        todo!()
+    }
+
+    // show item
+    fn show_item(&self) {
+        println!("Item: {}", self.get_name());
+    }
+
     fn get_name(&self) -> &String {
         &self.name
     }
@@ -890,9 +927,16 @@ impl ItemTrait for UsefulItem {
     }
 }
 
-
+impl std::fmt::Debug for dyn ItemTrait {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.as_debug().fmt(f)
+    }
+}
 // a bag can hold items
 
+
+// derive debug for bag
+#[derive(Debug)]
 pub struct Bag {
     items: Vec<Box<dyn ItemTrait>>,
     size: u32,
@@ -1035,6 +1079,7 @@ pub enum CharacterType {
     // Add more character types as needed
 }
 
+#[derive(Debug)]
 pub struct Character {
     name: String,
     character_type: CharacterType,
@@ -1044,6 +1089,7 @@ pub struct Character {
     intelligence: u32,
     x_position: usize,
     y_position: usize,
+    my_bag: Bag,
 }
 
 impl Character {
@@ -1057,6 +1103,7 @@ impl Character {
             intelligence,
             x_position,
             y_position,
+            my_bag: Bag::new(15),
         }
     }
 
@@ -1065,6 +1112,9 @@ impl Character {
         &self.character_type
     }
 
+    pub fn get_bag_mut(&mut self) -> &mut Bag {
+        &mut self.my_bag
+    }
 
     // move character in a Direction, North, South, East, West, using the direction offset
     pub fn move_character(&mut self, direction: Direction, grid: &Grid) {
@@ -1170,10 +1220,11 @@ impl CharacterManager {
         }
     }
 
-    // Method to get a character by its index
-    pub fn get_character(&self, index: usize) -> Option<&Character> {
-        self.characters.get(index)
+    // Method to get a mutable character reference by its index
+    pub fn get_character_mut(&mut self, index: usize) -> Option<&mut Character> {
+        self.characters.get_mut(index)
     }
+
 
     // Method to get a character by name
     pub fn get_character_by_name(&self, name: &str) -> Option<&Character> {
@@ -1197,7 +1248,21 @@ impl CharacterManager {
     }
 
 
+    // list characters in the character manager
+    pub fn list_characters(&self) {
+        // Display the list of characters
+        for character in &self.characters {
+            println!("{:?}", character);
+        }
+    }
+
+
     // Add more methods to perform operations on the characters...
+
+    // convenience method to add a player to the character manager
+    pub fn add_player(&mut self, player: Player) {
+        self.add_character(player.character);
+    }
 }
 
 pub struct NPC {
@@ -1380,16 +1445,13 @@ mod character_tests {
         assert_eq!(character.x_position, 1);
         assert_eq!(character.y_position, 0);
     }
-
-
-
 }
 
 
 // =================================================================================================
 // interactive command line interpreter
 
-// Define the possible commands
+// define commands
 #[derive(Debug)]
 pub enum Command {
     Move(Direction),
@@ -1397,112 +1459,204 @@ pub enum Command {
     AddApple,
     AddBanana,
     AddOrange,
+    ListCharacters,
+    ListItems,
+    ShowItem,
+    ShowCharacter,
+    ShowMap,
     Quit,
     Help,
     Unknown,
 }
 
-// Parse the user input into a Command
-pub fn parse_command(input: &str) -> Command {
+// parse user input into a command
+fn parse_command(input: &str) -> Command {
+
+    // check for no value, just return press
+    if input.trim().is_empty() {
+        return Command::Unknown;
+    }
+
     let parts: Vec<&str> = input.trim().split_whitespace().collect();
-    match parts.as_slice() {
-        ["move", direction] => {
-            match direction {
-                &"north" => Command::Move(Direction::North),
-                &"south" => Command::Move(Direction::South),
-                &"east" => Command::Move(Direction::East),
-                &"west" => Command::Move(Direction::West),
-                _ => Command::Unknown,
-            }
-        }
-        ["teleport", x, y] => {
-            if let Ok(x) = x.parse() {
-                if let Ok(y) = y.parse() {
-                    Command::Teleport(x, y)
-                } else {
-                    Command::Unknown
-                }
-            } else {
+    match parts[0].to_lowercase().as_str() {
+        "move" => {
+            if parts.len() < 2 {
                 Command::Unknown
+            } else {
+                match parts[1].to_lowercase().as_str() {
+                    "north" => Command::Move(Direction::North),
+                    "south" => Command::Move(Direction::South),
+                    "east" => Command::Move(Direction::East),
+                    "west" => Command::Move(Direction::West),
+                    _ => Command::Unknown,
+                }
             }
         }
-        ["add", item] => {
-            match item {
-                &"apple" => Command::AddApple,
-                &"banana" => Command::AddBanana,
-                &"orange" => Command::AddOrange,
-                _ => Command::Unknown,
+        "teleport" => {
+            if parts.len() < 3 {
+                Command::Unknown
+            } else {
+                let x = parts[1].parse().unwrap_or(0);
+                let y = parts[2].parse().unwrap_or(0);
+                Command::Teleport(x, y)
             }
         }
-        ["quit"] => Command::Quit,
-        ["help"] => Command::Help,
+        "add" => {
+            if parts.len() < 2 {
+                Command::Unknown
+            } else {
+                match parts[1].to_lowercase().as_str() {
+                    "apple" => Command::AddApple,
+                    "banana" => Command::AddBanana,
+                    "orange" => Command::AddOrange,
+                    _ => Command::Unknown,
+                }
+            }
+        }
+        "list" => {
+            if parts.len() < 2 {
+                Command::Unknown
+            } else {
+                match parts[1].to_lowercase().as_str() {
+                    "characters" => Command::ListCharacters,
+                    "items" => Command::ListItems,
+                    _ => Command::Unknown,
+                }
+            }
+        }
+        "show" => {
+            if parts.len() < 2 {
+                Command::Unknown
+            } else {
+                match parts[1].to_lowercase().as_str() {
+                    "item" => Command::ShowItem,
+                    "character" => Command::ShowCharacter,
+                    "map" => Command::ShowMap,
+                    _ => Command::Unknown,
+                }
+            }
+        }
+        "quit" => Command::Quit,
+        "help" => Command::Help,
         _ => Command::Unknown,
     }
 }
 
-// terminal command loop
-pub fn command_loop() {
-    let mut player = Player::new("Player".to_string(), CharacterType::Human, 100, 10, 10, 10, 0, 0, 1, 0);
-    let mut bag = Bag::new(5);
-    let mut grid = Grid::new(10);
-
-    loop {
-        println!("Enter a command:");
-        let mut input = String::new();
-        std::io::stdin().read_line(&mut input).expect("Failed to read line");
-        let command = parse_command(&input);
-
-        match command {
-            Command::Move(direction) => {
-                player.character.move_character(direction, &grid);
-                println!("Player moved {:?}", direction);
+// execute a command
+fn execute_command(command: Command, manager: &mut CharacterManager, grid: &mut Grid) {
+    let mut player: &mut Character = manager.get_character_mut(0).unwrap();
+    match command {
+        Command::Move(direction) => {
+            player.move_character(direction, grid);
+        }
+        Command::Teleport(x, y) => {
+            player.teleport_character(x, y);
+        }
+        Command::AddApple => {
+            player.get_bag_mut().add_apple();
+        }
+        Command::AddBanana => {
+            player.get_bag_mut().add_banana();
+        }
+        Command::AddOrange => {
+            player.get_bag_mut().add_orange();
+        }
+        Command::ListCharacters => {
+            manager.list_characters();
+        }
+        Command::ListItems => {
+            player.my_bag.items.iter().for_each(|item| item.show_item());
+        }
+        Command::ShowItem => {
+            if let Some(item) = player.my_bag.items.first() {
+                item.show_item();
             }
-            Command::Teleport(x, y) => {
-                player.character.teleport_character(x, y);
-                println!("Player teleported to ({}, {})", x, y);
-            }
-            Command::AddApple => {
-                bag.add_apple();
-                println!("Apple added to bag");
-            }
-            Command::AddBanana => {
-                bag.add_banana();
-                println!("Banana added to bag");
-            }
-            Command::AddOrange => {
-                bag.add_orange();
-                println!("Orange added to bag");
-            }
-            Command::Quit => {
-                println!("Quitting...");
-                break;
-            }
-            Command::Help => {
-                println!("Commands:");
-                println!("move <direction> - Move the player in the specified direction (north, south, east, west)");
-                println!("teleport <x> <y> - Teleport the player to the specified coordinates");
-                println!("add <item> - Add the specified item to the bag (apple, banana, orange)");
-                println!("quit - Quit the game");
-                println!("help - Display this help message");
-            }
-            Command::Unknown => {
-                println!("Unknown command. Type 'help' for a list of commands.");
-            }
+        }
+        Command::ShowCharacter => {
+            println!("{:?}", player);
+        }
+        Command::ShowMap => {
+            println!("generating map ...");
+            grid.clear_image_fg();
+            grid.do_draw_circle(player.x_position as i32, player.y_position as i32);
+            grid.save_image_fg("map.png");
+        }
+        Command::Quit => {
+            println!("Goodbye!");
+            std::process::exit(0);
+        }
+        Command::Help => {
+            println!("Available commands:");
+            println!("move <direction> - Move the player character in the specified direction (north, south, east, west)");
+            println!("teleport <x> <y> - Teleport the player character to the specified position");
+            println!("add <item> - Add an item to the player character's bag (apple, banana, orange)");
+            println!("list characters - List all characters in the character manager");
+            println!("list items - List all items in the player character's bag");
+            println!("show item - Show the first item in the player character's bag");
+            println!("show character - Show the player character's details");
+            println!("quit - Quit the program");
+            println!("help - Show available commands");
+        }
+        Command::Unknown => {
+            println!("Unknown command. Type 'help' to see available commands.");
         }
     }
 }
 
-
+// command loop
+fn command_loop(manager: &mut CharacterManager, grid: &mut Grid) {
+    println!("Enter command: ");
+    loop {
+        let mut input = String::new();
+        std::io::stdin().read_line(&mut input).unwrap();
+        let command = parse_command(&input);
+        execute_command(command, manager, grid);
+        println!("Enter command: ");
+    }
+}
 
 
 fn main() {
-    println!("Hello, world!");
+    println!("Processing map ... ");
+
     let mut grid = GRID.lock().unwrap();
+
+    let mut manager = CharacterManager::new();
+    let player = Player::new("Kevin".to_string(),
+                             CharacterType::Human,
+                             100,
+                             10,
+                             10,
+                             10,
+                             500,
+                             500,
+                             1,
+                             0);
+
+    manager.add_player(player);
+
+    // add troll
+    let troll = ComputerControlledCharacter::new("Troll".to_string(),
+                                                 CharacterType::Troll,
+                                                 200,
+                                                 20,
+                                                 5,
+                                                 5,
+                                                 5,
+                                                 5);
+    manager.add_character(troll.character);
+
+
     grid.generate_island(17);
     grid.set_boundary_margin(5);
     grid.generate_elevation_png("elevation.png");
-    grid.draw_on_image_buffer();
 
-    // wait for the user to press a key before closing the window
-    command_loop();
+
+    // start the command loop
+    // display "ready"
+    println!("Ready!");
+
+    command_loop(&mut manager, &mut grid);
+
+
 }
