@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::io::Read;
 use image::{ImageBuffer, Rgb};
-use imageproc::drawing::{draw_filled_circle, draw_filled_rect, draw_hollow_rect, draw_antialiased_line_segment, draw_polygon_mut};
+use imageproc::drawing::{draw_filled_circle, draw_filled_rect, draw_hollow_rect, draw_antialiased_line_segment, draw_polygon_mut, draw_filled_circle_mut};
 use imageproc::pixelops::interpolate;
 use rayon::prelude::*;
 use lazy_static::lazy_static;
@@ -11,6 +11,193 @@ use imageproc::point::Point;
 use imageproc::rect::Rect;
 use noise::{NoiseFn, Perlin, Seedable};
 
+
+// ===========================================================================
+// Direction concepts
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Direction {
+    North,
+    South,
+    East,
+    West,
+    NorthEast,
+    NorthWest,
+    SouthEast,
+    SouthWest,
+}
+
+// direction offsets in terms of x,y
+impl Direction {
+    pub fn get_offset(&self) -> (i32, i32) {
+        match self {
+            Direction::North => (0, -1),
+            Direction::South => (0, 1),
+            Direction::East => (1, 0),
+            Direction::West => (-1, 0),
+            Direction::NorthEast => (1, -1),
+            Direction::NorthWest => (-1, -1),
+            Direction::SouthEast => (1, 1),
+            Direction::SouthWest => (-1, 1),
+        }
+    }
+
+    // Human readable direction names
+    pub fn name(&self) -> &str {
+        match self {
+            Direction::North => "North",
+            Direction::South => "South",
+            Direction::East => "East",
+            Direction::West => "West",
+            Direction::NorthEast => "NorthEast",
+            Direction::NorthWest => "NorthWest",
+            Direction::SouthEast => "SouthEast",
+            Direction::SouthWest => "SouthWest",
+        }
+    }
+
+    // Get the opposite direction
+    pub fn opposite(&self) -> Direction {
+        match self {
+            Direction::North => Direction::South,
+            Direction::South => Direction::North,
+            Direction::East => Direction::West,
+            Direction::West => Direction::East,
+            Direction::NorthEast => Direction::SouthWest,
+            Direction::NorthWest => Direction::SouthEast,
+            Direction::SouthEast => Direction::NorthWest,
+            Direction::SouthWest => Direction::NorthEast,
+        }
+    }
+
+    // turn right
+    pub fn right(&self) -> Direction {
+        match self {
+            Direction::North => Direction::East,
+            Direction::South => Direction::West,
+            Direction::East => Direction::South,
+            Direction::West => Direction::North,
+            Direction::NorthEast => Direction::SouthEast,
+            Direction::NorthWest => Direction::NorthEast,
+            Direction::SouthEast => Direction::SouthWest,
+            Direction::SouthWest => Direction::NorthWest,
+        }
+    }
+
+    // turn left
+    pub fn left(&self) -> Direction {
+        match self {
+            Direction::North => Direction::West,
+            Direction::South => Direction::East,
+            Direction::East => Direction::North,
+            Direction::West => Direction::South,
+            Direction::NorthEast => Direction::NorthWest,
+            Direction::NorthWest => Direction::SouthWest,
+            Direction::SouthEast => Direction::NorthEast,
+            Direction::SouthWest => Direction::SouthEast,
+        }
+    }
+
+    // get the direction from a string
+    pub fn from_str(s: &str) -> Option<Direction> {
+        match s {
+            "North" => Some(Direction::North),
+            "South" => Some(Direction::South),
+            "East" => Some(Direction::East),
+            "West" => Some(Direction::West),
+            "NorthEast" => Some(Direction::NorthEast),
+            "NorthWest" => Some(Direction::NorthWest),
+            "SouthEast" => Some(Direction::SouthEast),
+            "SouthWest" => Some(Direction::SouthWest),
+            _ => None,
+        }
+    }
+}
+
+// direction tests
+#[cfg(test)]
+mod direction_tests {
+    use super::*;
+
+    // test direction get_offset
+    #[test]
+    fn test_direction_offset() {
+        assert_eq!(Direction::North.get_offset(), (0, -1));
+        assert_eq!(Direction::South.get_offset(), (0, 1));
+        assert_eq!(Direction::East.get_offset(), (1, 0));
+        assert_eq!(Direction::West.get_offset(), (-1, 0));
+        assert_eq!(Direction::NorthEast.get_offset(), (1, -1));
+        assert_eq!(Direction::NorthWest.get_offset(), (-1, -1));
+        assert_eq!(Direction::SouthEast.get_offset(), (1, 1));
+        assert_eq!(Direction::SouthWest.get_offset(), (-1, 1));
+    }
+
+
+    #[test]
+    fn test_direction_name() {
+        assert_eq!(Direction::North.name(), "North");
+        assert_eq!(Direction::South.name(), "South");
+        assert_eq!(Direction::East.name(), "East");
+        assert_eq!(Direction::West.name(), "West");
+        assert_eq!(Direction::NorthEast.name(), "NorthEast");
+        assert_eq!(Direction::NorthWest.name(), "NorthWest");
+        assert_eq!(Direction::SouthEast.name(), "SouthEast");
+        assert_eq!(Direction::SouthWest.name(), "SouthWest");
+    }
+
+    #[test]
+    fn test_direction_opposite() {
+        assert_eq!(Direction::North.opposite(), Direction::South);
+        assert_eq!(Direction::South.opposite(), Direction::North);
+        assert_eq!(Direction::East.opposite(), Direction::West);
+        assert_eq!(Direction::West.opposite(), Direction::East);
+        assert_eq!(Direction::NorthEast.opposite(), Direction::SouthWest);
+        assert_eq!(Direction::NorthWest.opposite(), Direction::SouthEast);
+        assert_eq!(Direction::SouthEast.opposite(), Direction::NorthWest);
+        assert_eq!(Direction::SouthWest.opposite(), Direction::NorthEast);
+    }
+
+    #[test]
+    fn test_direction_right() {
+        assert_eq!(Direction::North.right(), Direction::East);
+        assert_eq!(Direction::South.right(), Direction::West);
+        assert_eq!(Direction::East.right(), Direction::South);
+        assert_eq!(Direction::West.right(), Direction::North);
+        assert_eq!(Direction::NorthEast.right(), Direction::SouthEast);
+        assert_eq!(Direction::NorthWest.right(), Direction::NorthEast);
+        assert_eq!(Direction::SouthEast.right(), Direction::SouthWest);
+        assert_eq!(Direction::SouthWest.right(), Direction::NorthWest);
+    }
+
+    #[test]
+    fn test_direction_left() {
+        assert_eq!(Direction::North.left(), Direction::West);
+        assert_eq!(Direction::South.left(), Direction::East);
+        assert_eq!(Direction::East.left(), Direction::North);
+        assert_eq!(Direction::West.left(), Direction::South);
+        assert_eq!(Direction::NorthEast.left(), Direction::NorthWest);
+        assert_eq!(Direction::NorthWest.left(), Direction::SouthWest);
+        assert_eq!(Direction::SouthEast.left(), Direction::NorthEast);
+        assert_eq!(Direction::SouthWest.left(), Direction::SouthEast);
+    }
+
+    #[test]
+    fn test_direction_from_str() {
+        assert_eq!(Direction::from_str("North"), Some(Direction::North));
+        assert_eq!(Direction::from_str("South"), Some(Direction::South));
+        assert_eq!(Direction::from_str("East"), Some(Direction::East));
+        assert_eq!(Direction::from_str("West"), Some(Direction::West));
+        assert_eq!(Direction::from_str("NorthEast"), Some(Direction::NorthEast));
+        assert_eq!(Direction::from_str("NorthWest"), Some(Direction::NorthWest));
+        assert_eq!(Direction::from_str("SouthEast"), Some(Direction::SouthEast));
+        assert_eq!(Direction::from_str("SouthWest"), Some(Direction::SouthWest));
+        assert_eq!(Direction::from_str("Invalid"), None);
+    }
+}
+
+
+// ===========================================================================
+// Grid of Tiles
 
 #[derive(Clone, PartialEq, Debug)]
 pub enum TileType {
@@ -109,8 +296,8 @@ impl EarthTileTrait for Tile {
 
 pub struct Grid {
     tiles: Vec<Vec<Tile>>,
-    image_buffer: Arc<Mutex<Option<ImageBuffer<Rgb<u8>, Vec<u8>>>>>,
-
+    image_buffer_bg: Arc<Mutex<Option<ImageBuffer<Rgb<u8>, Vec<u8>>>>>,
+    image_buffer_fg: Arc<Mutex<Option<ImageBuffer<Rgb<u8>, Vec<u8>>>>>,
 }
 
 impl Grid {
@@ -124,7 +311,11 @@ impl Grid {
             }
             tiles.push(row);
         }
-        Grid { tiles, image_buffer: Arc::new(Mutex::new(None)), }
+        Grid {
+            tiles,
+            image_buffer_bg: Arc::new(Mutex::new(None)),
+            image_buffer_fg: Arc::new(Mutex::new(None)),
+        }
     }
 
 
@@ -324,13 +515,16 @@ impl Grid {
         (0, 0)
     }
 
+    // image processing in grid
+    // ============================================================================================
+
 
     pub fn generate_elevation_png(&self, filename: &str) {
         let size = self.tiles.len();
         //let mut img = ImageBuffer::new(size as u32, size as u32);
 
         let mut img = {
-            let mut buffer = self.image_buffer.lock().unwrap();
+            let mut buffer = self.image_buffer_bg.lock().unwrap();
             match &*buffer {
                 Some(buffer) => buffer.clone(),
                 None => {
@@ -369,58 +563,93 @@ impl Grid {
         });
 
         img.save(filename).unwrap();
-        *self.image_buffer.lock().unwrap() = Some(img);
+        // creates the base background image.
+        *self.image_buffer_bg.lock().unwrap() = Some(img);
+    }
+
+    // this function clears the fg image buffer by loading the bg image buffer into it
+    pub fn clear_image_fg(&self) {
+        // Lock and clone the image_buffer_bg
+        let img_bg = match &*self.image_buffer_bg.lock().unwrap() {
+            Some(buffer) => buffer.clone(),
+            None => return, // If the image_buffer_bg is None, return early
+        };
+
+        // Assign the cloned image_buffer_bg to image_buffer_fg
+        *self.image_buffer_fg.lock().unwrap() = Some(img_bg);
+    }
+
+    // this function clones the fg image buffer and locks it
+    fn clone_and_lock_fg(&self) -> Option<ImageBuffer<Rgb<u8>, Vec<u8>>> {
+        let mut img = match &*self.image_buffer_fg.lock().unwrap() {
+            Some(buffer) => buffer.clone(),
+            None => return None, // If the image buffer is None, return early
+        };
+        Some(img)
+    }
+
+
+    pub fn draw_circle(&self, center: (i32, i32), radius: i32, color: Rgb<u8>) {
+
+        // Lock the image buffer and clone it
+        let mut img = match self.clone_and_lock_fg() {
+            Some(value) => value,
+            None => {
+                println!("Warning: The image buffer is None");
+                return;
+            }
+        };
+
+        let (width, height) = img.dimensions();
+        // Check if the circle is within the image dimensions
+        if (center.0 + radius > width as i32) || (center.1 + radius > height as i32) {
+            println!("Warning: The circle is outside the image dimensions");
+            println!("Image dimensions: {} x {}", width, height);
+            println!("Circle center: {:?}, radius: {}, color: {:?}", center, radius, color);
+            return;
+        }
+
+
+        draw_filled_circle_mut(&mut img, center, radius, color);
+        img.save("modified_image.png").unwrap();
     }
 
 
     pub fn draw_on_image_buffer(&self) {
 
         // Lock the image buffer and clone it
-        let mut img = match &*self.image_buffer.lock().unwrap() {
+        let mut img = match &*self.image_buffer_bg.lock().unwrap() {
             Some(buffer) => buffer.clone(),
             None => return, // If the image buffer is None, return early
         };
 
-        // Draw a line
-        let start = (50, 50);
-        let end = (100, 100);
-        let color = Rgb([255, 0, 0]);
-        draw_antialiased_line_segment(&mut img, start, end, color, interpolate);
+        // display the image dimensions
+        let (width, height) = img.dimensions();
+        // println!("Image dimensions: {} x {}", width, height);
 
-        // Draw a filled rectangle
-        let top_left = (150, 150);
-        let bottom_right = (200, 200);
-        let color = Rgb([0, 255, 0]);
-        let rect = Rect::at(top_left.0, top_left.1).of_size((bottom_right.0 - top_left.0) as u32, (bottom_right.1 - top_left.1) as u32);
 
-        draw_filled_rect(&mut img, rect, color);
-
-        // Draw a hollow rectangle
-        let top_left = (250, 250);
-        let bottom_right = (300, 300);
-        let color = Rgb([0, 0, 255]);
-        draw_hollow_rect(&mut img, rect, color);
-
-        // Draw a filled circle
-        let center = (350, 350);
+        let center = (400, 400);
         let radius = 50;
-        let color = Rgb([255, 255, 0]);
-        draw_filled_circle(&mut img, center, radius, color);
+        let color = Rgb([255, 255, 255]);
 
-        // Draw a triangle
-        let points = vec![(400, 400), (450, 450), (400, 500)];
-        let points: Vec<Point<i32>> = points.into_iter().map(|(x, y)| Point::new(x, y)).collect();
+        // display the circle center, radius, and color
+        println!("Circle center: {:?}, radius: {}, color: {:?}", center, radius, color);
+        // draw the circle on the image buffer
 
-        let color = Rgb([255, 0, 255]);
-        draw_polygon_mut(&mut img, &points, color);
+        // Check if the circle is within the image dimensions
+        if center.0 + radius as i32 > width as i32 || center.1 + radius as i32 > height as i32 {
+            println!("Warning:The circle is outside the image dimensions");
+            return;
+        }
 
-        // Save the modified image buffer
+        draw_filled_circle_mut(&mut img, center, radius, color);
+        // save the modified image buffer
+
         img.save("modified_image.png").unwrap();
     }
 
 
-    // end of Grid struct
-
+// end of Grid struct
 }
 
 // define our grid in a way that can be shared across threads
@@ -836,6 +1065,32 @@ impl Character {
         &self.character_type
     }
 
+
+    // move character in a Direction, North, South, East, West, using the direction offset
+    pub fn move_character(&mut self, direction: Direction, grid: &Grid) {
+        let (dx, dy) = direction.get_offset();
+
+        // check the lower bounds of the grid
+        // if self.x_position as i32 + dx < 0 || self.y_position as i32 + dy < 0 {
+        //     return;
+        // }
+        // // check the upper bounds of the grid
+        // if self.x_position + dx as usize >= grid.tiles.len() || self.y_position + dy as usize >= grid.tiles[0].len() {
+        //     return;
+        // }
+        //
+        // check if the next position tile is a boundary
+        if let TileType::Boundary = grid.tiles[(self.x_position as i32 + dx) as usize][(self.y_position as i32 + dy) as usize].tile_type {
+            // display boundary message
+            println!("You cannot move beyond the boundary of this world");
+            return;
+        }
+
+        self.x_position = (self.x_position as i32 + dx) as usize;
+        self.y_position = (self.y_position as i32 + dy) as usize;
+    }
+
+
     // Other methods...
 
 
@@ -1017,7 +1272,227 @@ mod character_tests {
         character_manager.add_character(character);
         assert_eq!(character_manager.count_characters(), 1);
     }
+
+    #[test]
+    fn test_remove_character() {
+        let mut character_manager = CharacterManager::new();
+        let character = Character::new("Player".to_string(), CharacterType::Human, 100, 10, 10, 10, 0, 0);
+        character_manager.add_character(character);
+        let removed_character = character_manager.remove_character(0);
+        assert_eq!(removed_character.is_some(), true);
+        assert_eq!(character_manager.count_characters(), 0);
+    }
+
+    #[test]
+    fn test_get_character() {
+        let mut character_manager = CharacterManager::new();
+        let character = Character::new("Player".to_string(), CharacterType::Human, 100, 10, 10, 10, 0, 0);
+        character_manager.add_character(character);
+        let retrieved_character = character_manager.get_character(0);
+        assert_eq!(retrieved_character.is_some(), true);
+    }
+
+    #[test]
+    fn test_get_character_by_name() {
+        let mut character_manager = CharacterManager::new();
+        let character = Character::new("Player".to_string(), CharacterType::Human, 100, 10, 10, 10, 0, 0);
+        character_manager.add_character(character);
+        let retrieved_character = character_manager.get_character_by_name("Player");
+        assert_eq!(retrieved_character.is_some(), true);
+    }
+
+    #[test]
+    fn test_get_characters_at_position() {
+        let mut character_manager = CharacterManager::new();
+        let character1 = Character::new("Player1".to_string(), CharacterType::Human, 100, 10, 10, 10, 0, 0);
+        let character2 = Character::new("Player2".to_string(), CharacterType::Human, 100, 10, 10, 10, 0, 0);
+        character_manager.add_character(character1);
+        character_manager.add_character(character2);
+        let characters_at_position = character_manager.get_characters_at_position(0, 0);
+        assert_eq!(characters_at_position.len(), 2);
+    }
+
+    #[test]
+    fn test_is_character_at_position() {
+        let mut character_manager = CharacterManager::new();
+        let character = Character::new("Player".to_string(), CharacterType::Human, 100, 10, 10, 10, 0, 0);
+        character_manager.add_character(character);
+        let is_character_at_position = character_manager.is_character_at_position(0, 0);
+        assert_eq!(is_character_at_position, true);
+    }
+
+    // test move north
+    #[test]
+    fn test_move_north() {
+        let mut character = Character::new("Player".to_string(), CharacterType::Human, 100, 10, 10, 10, 0, 0);
+        let grid = Grid::new(10);
+        character.move_character(Direction::North, &grid);
+        assert_eq!(character.x_position, 0);
+        assert_eq!(character.y_position, 1);
+    }
+
+    // test move south
+    #[test]
+    fn test_move_south() {
+        let mut character = Character::new("Player".to_string(), CharacterType::Human, 100, 10, 10, 10, 0, 1);
+        let grid = Grid::new(10);
+        character.move_character(Direction::South, &grid);
+        assert_eq!(character.x_position, 0);
+        assert_eq!(character.y_position, 0);
+    }
+
+    // test move east
+    #[test]
+    fn test_move_east() {
+        let mut character = Character::new("Player".to_string(), CharacterType::Human, 100, 10, 10, 10, 0, 0);
+        let grid = Grid::new(10);
+        character.move_character(Direction::East, &grid);
+        assert_eq!(character.x_position, 1);
+        assert_eq!(character.y_position, 0);
+    }
+
+    // test move west
+    #[test]
+    fn test_move_west() {
+        let mut character = Character::new("Player".to_string(), CharacterType::Human, 100, 10, 10, 10, 1, 0);
+        let grid = Grid::new(10);
+        character.move_character(Direction::West, &grid);
+        assert_eq!(character.x_position, 0);
+        assert_eq!(character.y_position, 0);
+    }
+
+    // test move beyond boundary
+    #[test]
+    fn test_move_beyond_boundary() {
+        let mut character = Character::new("Player".to_string(), CharacterType::Human, 100, 10, 10, 10, 0, 0);
+        let grid = Grid::new(10);
+        character.move_character(Direction::West, &grid);
+        assert_eq!(character.x_position, 0);
+        assert_eq!(character.y_position, 0);
+    }
+
+    // test move to boundary
+    #[test]
+    fn test_move_to_boundary() {
+        let mut character = Character::new("Player".to_string(), CharacterType::Human, 100, 10, 10, 10, 0, 0);
+        let grid = Grid::new(10);
+        character.move_character(Direction::East, &grid);
+        assert_eq!(character.x_position, 1);
+        assert_eq!(character.y_position, 0);
+    }
+
+
+
 }
+
+
+// =================================================================================================
+// interactive command line interpreter
+
+// Define the possible commands
+#[derive(Debug)]
+pub enum Command {
+    Move(Direction),
+    Teleport(usize, usize),
+    AddApple,
+    AddBanana,
+    AddOrange,
+    Quit,
+    Help,
+    Unknown,
+}
+
+// Parse the user input into a Command
+pub fn parse_command(input: &str) -> Command {
+    let parts: Vec<&str> = input.trim().split_whitespace().collect();
+    match parts.as_slice() {
+        ["move", direction] => {
+            match direction {
+                &"north" => Command::Move(Direction::North),
+                &"south" => Command::Move(Direction::South),
+                &"east" => Command::Move(Direction::East),
+                &"west" => Command::Move(Direction::West),
+                _ => Command::Unknown,
+            }
+        }
+        ["teleport", x, y] => {
+            if let Ok(x) = x.parse() {
+                if let Ok(y) = y.parse() {
+                    Command::Teleport(x, y)
+                } else {
+                    Command::Unknown
+                }
+            } else {
+                Command::Unknown
+            }
+        }
+        ["add", item] => {
+            match item {
+                &"apple" => Command::AddApple,
+                &"banana" => Command::AddBanana,
+                &"orange" => Command::AddOrange,
+                _ => Command::Unknown,
+            }
+        }
+        ["quit"] => Command::Quit,
+        ["help"] => Command::Help,
+        _ => Command::Unknown,
+    }
+}
+
+// terminal command loop
+pub fn command_loop() {
+    let mut player = Player::new("Player".to_string(), CharacterType::Human, 100, 10, 10, 10, 0, 0, 1, 0);
+    let mut bag = Bag::new(5);
+    let mut grid = Grid::new(10);
+
+    loop {
+        println!("Enter a command:");
+        let mut input = String::new();
+        std::io::stdin().read_line(&mut input).expect("Failed to read line");
+        let command = parse_command(&input);
+
+        match command {
+            Command::Move(direction) => {
+                player.character.move_character(direction, &grid);
+                println!("Player moved {:?}", direction);
+            }
+            Command::Teleport(x, y) => {
+                player.character.teleport_character(x, y);
+                println!("Player teleported to ({}, {})", x, y);
+            }
+            Command::AddApple => {
+                bag.add_apple();
+                println!("Apple added to bag");
+            }
+            Command::AddBanana => {
+                bag.add_banana();
+                println!("Banana added to bag");
+            }
+            Command::AddOrange => {
+                bag.add_orange();
+                println!("Orange added to bag");
+            }
+            Command::Quit => {
+                println!("Quitting...");
+                break;
+            }
+            Command::Help => {
+                println!("Commands:");
+                println!("move <direction> - Move the player in the specified direction (north, south, east, west)");
+                println!("teleport <x> <y> - Teleport the player to the specified coordinates");
+                println!("add <item> - Add the specified item to the bag (apple, banana, orange)");
+                println!("quit - Quit the game");
+                println!("help - Display this help message");
+            }
+            Command::Unknown => {
+                println!("Unknown command. Type 'help' for a list of commands.");
+            }
+        }
+    }
+}
+
+
 
 
 fn main() {
@@ -1029,6 +1504,5 @@ fn main() {
     grid.draw_on_image_buffer();
 
     // wait for the user to press a key before closing the window
-    println!("Press any key to exit...");
-    let _ = std::io::stdin().read(&mut [0u8]).unwrap();
+    command_loop();
 }
