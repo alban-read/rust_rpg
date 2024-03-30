@@ -11,6 +11,566 @@ use std::sync::{Arc, Mutex};
 use imageproc::point::Point;
 use imageproc::rect::Rect;
 use noise::{NoiseFn, Perlin, Seedable};
+use rand::prelude::IteratorRandom;
+use rand::Rng;
+
+
+// predefined colours named Color_XXX
+pub const COLOR_RED: Rgb<u8> = Rgb([255, 0, 0]);
+pub const COLOR_GREEN: Rgb<u8> = Rgb([0, 255, 0]);
+pub const COLOR_BLUE: Rgb<u8> = Rgb([0, 0, 255]);
+pub const COLOR_YELLOW: Rgb<u8> = Rgb([255, 255, 0]);
+pub const COLOR_WHITE: Rgb<u8> = Rgb([255, 255, 255]);
+pub const COLOR_BLACK: Rgb<u8> = Rgb([0, 0, 0]);
+pub const COLOR_GRAY: Rgb<u8> = Rgb([128, 128, 128]);
+pub const COLOR_LIGHT_GRAY: Rgb<u8> = Rgb([192, 192, 192]);
+pub const COLOR_DARK_GRAY: Rgb<u8> = Rgb([64, 64, 64]);
+pub const COLOR_ORANGE: Rgb<u8> = Rgb([255, 165, 0]);
+pub const COLOR_PURPLE: Rgb<u8> = Rgb([128, 0, 128]);
+pub const COLOR_CYAN: Rgb<u8> = Rgb([0, 255, 255]);
+pub const COLOR_PINK: Rgb<u8> = Rgb([255, 192, 203]);
+pub const COLOR_BROWN: Rgb<u8> = Rgb([165, 42, 42]);
+// magenta
+pub const COLOR_MAGENTA: Rgb<u8> = Rgb([255, 0, 255]);
+// lime
+pub const COLOR_LIME: Rgb<u8> = Rgb([0, 255, 0]);
+// olive
+pub const COLOR_OLIVE: Rgb<u8> = Rgb([128, 128, 0]);
+// maroon
+pub const COLOR_MAROON: Rgb<u8> = Rgb([128, 0, 0]);
+// navy
+pub const COLOR_NAVY: Rgb<u8> = Rgb([0, 0, 128]);
+// teal
+pub const COLOR_TEAL: Rgb<u8> = Rgb([0, 128, 128]);
+// silver
+pub const COLOR_SILVER: Rgb<u8> = Rgb([192, 192, 192]);
+// gold
+pub const COLOR_GOLD: Rgb<u8> = Rgb([255, 215, 0]);
+// indigo
+pub const COLOR_INDIGO: Rgb<u8> = Rgb([75, 0, 130]);
+// violet
+pub const COLOR_VIOLET: Rgb<u8> = Rgb([238, 130, 238]);
+// turquoise
+pub const COLOR_TURQUOISE: Rgb<u8> = Rgb([64, 224, 208]);
+// sky blue
+pub const COLOR_SKY_BLUE: Rgb<u8> = Rgb([135, 206, 235]);
+// light blue
+pub const COLOR_LIGHT_BLUE: Rgb<u8> = Rgb([173, 216, 230]);
+// dark blue
+pub const COLOR_DARK_BLUE: Rgb<u8> = Rgb([0, 0, 139]);
+// light green
+pub const COLOR_LIGHT_GREEN: Rgb<u8> = Rgb([144, 238, 144]);
+// dark green
+pub const COLOR_DARK_GREEN: Rgb<u8> = Rgb([0, 100, 0]);
+// light yellow
+pub const COLOR_LIGHT_YELLOW: Rgb<u8> = Rgb([255, 255, 224]);
+// dark yellow
+pub const COLOR_DARK_YELLOW: Rgb<u8> = Rgb([189, 183, 107]);
+// light orange
+pub const COLOR_LIGHT_ORANGE: Rgb<u8> = Rgb([255, 160, 122]);
+// dark orange
+pub const COLOR_DARK_ORANGE: Rgb<u8> = Rgb([255, 140, 0]);
+// light red
+pub const COLOR_LIGHT_RED: Rgb<u8> = Rgb([255, 99, 71]);
+// dark red
+pub const COLOR_DARK_RED: Rgb<u8> = Rgb([139, 0, 0]);
+// light purple
+pub const COLOR_LIGHT_PURPLE: Rgb<u8> = Rgb([221, 160, 221]);
+// dark purple
+pub const COLOR_DARK_PURPLE: Rgb<u8> = Rgb([128, 0, 128]);
+// light cyan
+pub const COLOR_LIGHT_CYAN: Rgb<u8> = Rgb([224, 255, 255]);
+// dark cyan
+pub const COLOR_DARK_CYAN: Rgb<u8> = Rgb([0, 139, 139]);
+// light pink
+pub const COLOR_LIGHT_PINK: Rgb<u8> = Rgb([255, 182, 193]);
+// dark pink
+pub const COLOR_DARK_PINK: Rgb<u8> = Rgb([199, 21, 133]);
+// light brown
+pub const COLOR_LIGHT_BROWN: Rgb<u8> = Rgb([205, 133, 63]);
+// dark brown
+pub const COLOR_DARK_BROWN: Rgb<u8> = Rgb([139, 69, 19]);
+// light magenta
+pub const COLOR_LIGHT_MAGENTA: Rgb<u8> = Rgb([255, 119, 255]);
+// dark magenta
+pub const COLOR_DARK_MAGENTA: Rgb<u8> = Rgb([139, 0, 139]);
+// light lime
+pub const COLOR_LIGHT_LIME: Rgb<u8> = Rgb([204, 255, 204]);
+// dark lime
+pub const COLOR_DARK_LIME: Rgb<u8> = Rgb([0, 204, 0]);
+// light olive
+pub const COLOR_LIGHT_OLIVE: Rgb<u8> = Rgb([204, 204, 0]);
+// dark olive
+pub const COLOR_DARK_OLIVE: Rgb<u8> = Rgb([102, 102, 0]);
+// light maroon
+pub const COLOR_LIGHT_MAROON: Rgb<u8> = Rgb([204, 0, 0]);
+// dark maroon
+pub const COLOR_DARK_MAROON: Rgb<u8> = Rgb([102, 0, 0]);
+// light navy
+pub const COLOR_LIGHT_NAVY: Rgb<u8> = Rgb([0, 0, 204]);
+// dark navy
+pub const COLOR_DARK_NAVY: Rgb<u8> = Rgb([0, 0, 102]);
+// light teal
+pub const COLOR_LIGHT_TEAL: Rgb<u8> = Rgb([0, 204, 204]);
+// dark teal
+
+pub const COLOR_DARK_TEAL: Rgb<u8> = Rgb([0, 102, 102]);
+// light silver
+pub const COLOR_LIGHT_SILVER: Rgb<u8> = Rgb([224, 224, 224]);
+// dark silver
+pub const COLOR_DARK_SILVER: Rgb<u8> = Rgb([96, 96, 96]);
+// light gold
+pub const COLOR_LIGHT_GOLD: Rgb<u8> = Rgb([255, 236, 139]);
+// dark gold
+pub const COLOR_DARK_GOLD: Rgb<u8> = Rgb([184, 134, 11]);
+// light indigo
+
+pub const COLOR_LIGHT_INDIGO: Rgb<u8> = Rgb([111, 0, 255]);
+// dark indigo
+pub const COLOR_DARK_INDIGO: Rgb<u8> = Rgb([54, 0, 139]);
+// light violet
+pub const COLOR_LIGHT_VIOLET: Rgb<u8> = Rgb([238, 130, 238]);
+// dark violet
+pub const COLOR_DARK_VIOLET: Rgb<u8> = Rgb([148, 0, 211]);
+// light turquoise
+pub const COLOR_LIGHT_TURQUOISE: Rgb<u8> = Rgb([175, 238, 238]);
+// dark turquoise
+pub const COLOR_DARK_TURQUOISE: Rgb<u8> = Rgb([0, 206, 209]);
+// light sky blue
+pub const COLOR_LIGHT_SKY_BLUE: Rgb<u8> = Rgb([135, 206, 250]);
+
+// that will do.
+
+
+// =================================================================================================
+// Items
+
+
+#[derive(Clone, Debug)]
+pub struct UsefulItem {
+    name: String,
+    use_value: u32,
+    // Add more properties as needed
+}
+
+impl UsefulItem {
+    pub fn new(name: String, use_value: u32) -> Self {
+        UsefulItem {
+            name,
+            use_value,
+        }
+    }
+
+    // Add getter methods to access the properties
+    pub fn get_name(&self) -> &String {
+        &self.name
+    }
+
+    pub fn get_use_value(&self) -> u32 {
+        self.use_value
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct FoodItem {
+    name: String,
+    nutritional_value: u32,
+    // Add more properties as needed
+}
+
+// derive debug for food item
+
+impl FoodItem {
+    pub fn new(name: String, nutritional_value: u32) -> Self {
+        FoodItem {
+            name,
+            nutritional_value,
+        }
+    }
+
+    // debug for food item
+    pub fn as_debug(&self) -> &dyn std::fmt::Debug {
+        self
+    }
+
+
+    // Add getter methods to access the properties
+    pub fn get_name(&self) -> &String {
+        &self.name
+    }
+
+    pub fn get_nutritional_value(&self) -> u32 {
+        self.nutritional_value
+    }
+}
+
+pub trait ItemTrait {
+    fn as_debug(&self) -> &dyn std::fmt::Debug;
+    fn get_name(&self) -> &String;
+    fn get_use_value(&self) -> u32;
+    fn get_nutritional_value(&self) -> u32;
+    // show item (on display)
+    fn show_item(&self) {
+        println!("Item: {}", self.get_name());
+    }
+    fn clone_box(&self) -> Box<dyn ItemTrait>;
+}
+
+impl Clone for Box<dyn ItemTrait> {
+    fn clone(&self) -> Box<dyn ItemTrait> {
+        self.clone_box()
+    }
+}
+
+
+impl ItemTrait for FoodItem {
+    fn as_debug(&self) -> &dyn std::fmt::Debug {
+        self
+    }
+
+    fn get_name(&self) -> &String {
+        &self.name
+    }
+
+    fn get_use_value(&self) -> u32 {
+        0 // Food items do not have a use value
+    }
+
+    fn get_nutritional_value(&self) -> u32 {
+        self.nutritional_value
+    }
+
+    fn clone_box(&self) -> Box<dyn ItemTrait> {
+        Box::new(self.clone())
+    }
+
+}
+
+impl ItemTrait for UsefulItem {
+    fn as_debug(&self) -> &dyn Debug {
+        todo!()
+    }
+
+    fn get_name(&self) -> &String {
+        &self.name
+    }
+
+    fn get_use_value(&self) -> u32 {
+        self.use_value
+    }
+
+    fn get_nutritional_value(&self) -> u32 {
+        0 // Useful items do not have a nutritional value
+    }
+
+    // show item
+    fn show_item(&self) {
+        println!("Item: {}", self.get_name());
+    }
+
+    fn clone_box(&self) -> Box<dyn ItemTrait> {
+        Box::new(self.clone())
+    }
+
+}
+
+impl std::fmt::Debug for dyn ItemTrait {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.as_debug().fmt(f)
+    }
+}
+// a bag can hold items
+
+
+// derive debug for bag
+#[derive(Debug)]
+pub struct Bag {
+    items: Vec<Box<dyn ItemTrait>>,
+    size: u32,
+}
+
+impl Bag {
+    pub fn new(capacity: u32) -> Self {
+        Bag {
+            items: Vec::new(),
+            size: capacity,
+        }
+    }
+
+    pub fn add_item(&mut self, item: Box<dyn ItemTrait>) {
+        if self.items.len() < self.size as usize {
+            self.items.push(item);
+        }
+    }
+
+    pub fn remove_item(&mut self, index: usize) -> Option<Box<dyn ItemTrait>> {
+        if index < self.items.len() {
+            Some(self.items.remove(index))
+        } else {
+            None
+        }
+    }
+
+    // Add methods to get the total use value and nutritional value of the items in the bag
+    pub fn total_use_value(&self) -> u32 {
+        self.items.iter().map(|item| item.get_use_value()).sum()
+    }
+
+    pub fn total_nutritional_value(&self) -> u32 {
+        self.items.iter().map(|item| item.get_nutritional_value()).sum()
+    }
+
+
+    pub fn add_apple(&mut self) {
+        let apple = Box::new(FoodItem::new("Apple".to_string(), 50));
+        self.add_item(apple);
+    }
+
+    pub fn add_banana(&mut self) {
+        let banana = Box::new(FoodItem::new("Banana".to_string(), 100));
+        self.add_item(banana);
+    }
+
+    pub fn add_orange(&mut self) {
+        let orange = Box::new(FoodItem::new("Orange".to_string(), 60));
+        self.add_item(orange);
+    }
+
+    // Add more helper functions for other common food items...
+}
+
+
+// =================================================================================================
+// map items
+
+
+// MapItem struct used to store items on the map
+pub struct MapItem {
+    item: Box<dyn ItemTrait>,
+    x: usize,
+    y: usize,
+}
+
+// MapItem implementation
+impl MapItem {
+
+    pub fn new(item: Box<dyn ItemTrait>, x: usize, y: usize) -> Self {
+        MapItem {
+            item,
+            x,
+            y,
+        }
+    }
+
+    pub fn get_position(&self) -> (usize, usize) {
+        (self.x, self.y)
+    }
+
+    pub fn get_item(&self) -> &Box<dyn ItemTrait> {
+        &self.item
+    }
+}
+
+// map item grid
+pub struct MapItemGrid {
+    items: Vec<Vec<Option<MapItem>>>,
+}
+
+// MapItemGrid implementation
+impl MapItemGrid {
+
+    pub fn new(size: usize) -> Self {
+        let mut items = Vec::new();
+        for _ in 0..size {
+            let mut row = Vec::new();
+            for _ in 0..size {
+                row.push(None);
+            }
+            items.push(row);
+        }
+        MapItemGrid {
+            items,
+        }
+    }
+
+    pub fn add_item(&mut self, item: MapItem) {
+        let (x, y) = item.get_position();
+        self.items[x][y] = Some(item);
+    }
+
+    pub fn remove_item(&mut self, x: usize, y: usize) {
+        self.items[x][y] = None;
+    }
+
+    pub fn get_item(&self, x: usize, y: usize) -> Option<&MapItem> {
+        self.items[x][y].as_ref()
+    }
+
+    // add random food items to the map
+    pub fn add_random_food_items(&mut self, num_items: usize) {
+        let size=2048; // map size
+        let mut rng = rand::thread_rng();
+        for _ in 0..num_items {
+            // choose a random map position
+            let x = rng.gen_range(0..size);
+            let y = rng.gen_range(0..size);
+            // create a collection of food items to select from
+            let food_items: Vec<Box<dyn ItemTrait>> = vec![
+                Box::new(FoodItem::new("Apple".to_string(), 10)),
+                Box::new(FoodItem::new("Banana".to_string(), 15)),
+                Box::new(FoodItem::new("Orange".to_string(), 20)),
+                Box::new(FoodItem::new("Grapes".to_string(), 25)),
+                Box::new(FoodItem::new("Strawberry".to_string(), 30)),
+                Box::new(FoodItem::new("Blueberry".to_string(), 35)),
+                Box::new(FoodItem::new("Raspberry".to_string(), 40)),
+                Box::new(FoodItem::new("Blackberry".to_string(), 45)),
+                Box::new(FoodItem::new("Pineapple".to_string(), 50)),
+                Box::new(FoodItem::new("Watermelon".to_string(), 55)),
+                Box::new(FoodItem::new("Kiwi".to_string(), 60)),
+                Box::new(FoodItem::new("Mango".to_string(), 65)),
+                Box::new(FoodItem::new("Peach".to_string(), 70)),
+                Box::new(FoodItem::new("Plum".to_string(), 75)),
+                Box::new(FoodItem::new("Cherry".to_string(), 80)),
+                Box::new(FoodItem::new("Pear".to_string(), 85)),
+                Box::new(FoodItem::new("Pomegranate".to_string(), 90)),
+                Box::new(FoodItem::new("Apricot".to_string(), 95)),
+                Box::new(FoodItem::new("Cantaloupe".to_string(), 100)),
+                Box::new(FoodItem::new("Honeydew".to_string(), 105)),
+                Box::new(FoodItem::new("Lemon".to_string(), 110)),
+                Box::new(FoodItem::new("Lime".to_string(), 115)),
+                Box::new(FoodItem::new("Coconut".to_string(), 120)),
+                Box::new(FoodItem::new("Grapefruit".to_string(), 125)),
+                Box::new(FoodItem::new("Tangerine".to_string(), 130)),
+                Box::new(FoodItem::new("Nectarine".to_string(), 135)),
+                Box::new(FoodItem::new("Persimmon".to_string(), 140)),
+                Box::new(FoodItem::new("Starfruit".to_string(), 145)),
+                Box::new(FoodItem::new("Passionfruit".to_string(), 150)),
+                Box::new(FoodItem::new("Dragonfruit".to_string(), 155)),
+                Box::new(FoodItem::new("Guava".to_string(), 160)),
+                Box::new(FoodItem::new("Papaya".to_string(), 165)),
+                Box::new(FoodItem::new("Lychee".to_string(), 170)),
+                Box::new(FoodItem::new("Jackfruit".to_string(), 175)),
+                Box::new(FoodItem::new("Durian".to_string(), 180)),
+                Box::new(FoodItem::new("Mangosteen".to_string(), 185)),
+                Box::new(FoodItem::new("Kiwi".to_string(), 190)),
+                Box::new(FoodItem::new("Pineapple".to_string(), 195)),
+                Box::new(FoodItem::new("Watermelon".to_string(), 200)),
+            ];
+            // randomly choose one item from the collection
+            let random_index = rng.gen_range(0..food_items.len());
+            let food_item = &food_items[random_index];
+            // create a new MapItem with the chosen food item and add it to the map
+            let map_item = MapItem::new(food_item.clone(), x, y);
+            self.add_item(map_item);
+            // println!("Added food item: {} at position: ({}, {})", food_item.get_name(), x, y);
+
+        }
+    }
+
+    // get items at x,y location
+    pub fn get_items_at(&self, x: usize, y: usize) -> Vec<&MapItem> {
+        let mut items = Vec::new();
+        if let Some(item) = &self.items[x][y] {
+            items.push(item);
+        }
+        items
+    }
+
+    // display items at x,y location
+    pub fn display_items_at(&self, x: usize, y: usize) {
+        let items = self.get_items_at(x, y);
+        if items.is_empty() {
+            println!("No items found at position: ({}, {})", x, y);
+        } else {
+            println!("Items found at position: ({}, {})", x, y);
+            for item in items {
+                println!("Item: {}", item.get_item().get_name());
+            }
+        }
+    }
+
+
+
+
+    // end of MapItemGrid struct
+}
+
+
+
+
+
+
+#[cfg(test)]
+mod item_tests {
+    use super::*;
+
+    #[test]
+    fn test_bag_creation() {
+        let bag = Bag::new(5);
+        assert_eq!(bag.items.len(), 0);
+    }
+
+    #[test]
+    fn test_add_item() {
+        let mut bag = Bag::new(5);
+        let apple = Box::new(FoodItem::new("Apple".to_string(), 50));
+        bag.add_item(apple);
+        assert_eq!(bag.items.len(), 1);
+    }
+
+    #[test]
+    fn test_remove_item() {
+        let mut bag = Bag::new(5);
+        let apple = Box::new(FoodItem::new("Apple".to_string(), 50));
+        bag.add_item(apple);
+        let removed_item = bag.remove_item(0);
+        assert_eq!(removed_item.is_some(), true);
+        assert_eq!(bag.items.len(), 0);
+    }
+
+    #[test]
+    fn test_total_use_value() {
+        let mut bag = Bag::new(5);
+        let apple = Box::new(FoodItem::new("Apple".to_string(), 50));
+        let banana = Box::new(FoodItem::new("Banana".to_string(), 100));
+        bag.add_item(apple);
+        bag.add_item(banana);
+        assert_eq!(bag.total_use_value(), 0);
+    }
+
+    #[test]
+    fn test_total_nutritional_value() {
+        let mut bag = Bag::new(5);
+        let apple = Box::new(FoodItem::new("Apple".to_string(), 50));
+        let banana = Box::new(FoodItem::new("Banana".to_string(), 100));
+        bag.add_item(apple);
+        bag.add_item(banana);
+        assert_eq!(bag.total_nutritional_value(), 150);
+    }
+
+    #[test]
+    fn test_add_apple() {
+        let mut bag = Bag::new(5);
+        bag.add_apple();
+        assert_eq!(bag.items.len(), 1);
+    }
+
+    #[test]
+    fn test_add_banana() {
+        let mut bag = Bag::new(5);
+        bag.add_banana();
+        assert_eq!(bag.items.len(), 1);
+    }
+
+    #[test]
+    fn test_add_orange() {
+        let mut bag = Bag::new(5);
+        bag.add_orange();
+        assert_eq!(bag.items.len(), 1);
+    }
+
+    // Add more tests for other common food items...
+}
 
 
 // ===========================================================================
@@ -72,7 +632,7 @@ impl Direction {
     }
 
     // turn right
-    pub fn right(&self) -> Direction {
+    pub fn turn_right(&self) -> Direction {
         match self {
             Direction::North => Direction::East,
             Direction::South => Direction::West,
@@ -86,7 +646,7 @@ impl Direction {
     }
 
     // turn left
-    pub fn left(&self) -> Direction {
+    pub fn turn_left(&self) -> Direction {
         match self {
             Direction::North => Direction::West,
             Direction::South => Direction::East,
@@ -160,26 +720,26 @@ mod direction_tests {
 
     #[test]
     fn test_direction_right() {
-        assert_eq!(Direction::North.right(), Direction::East);
-        assert_eq!(Direction::South.right(), Direction::West);
-        assert_eq!(Direction::East.right(), Direction::South);
-        assert_eq!(Direction::West.right(), Direction::North);
-        assert_eq!(Direction::NorthEast.right(), Direction::SouthEast);
-        assert_eq!(Direction::NorthWest.right(), Direction::NorthEast);
-        assert_eq!(Direction::SouthEast.right(), Direction::SouthWest);
-        assert_eq!(Direction::SouthWest.right(), Direction::NorthWest);
+        assert_eq!(Direction::North.turn_right(), Direction::East);
+        assert_eq!(Direction::South.turn_right(), Direction::West);
+        assert_eq!(Direction::East.turn_right(), Direction::South);
+        assert_eq!(Direction::West.turn_right(), Direction::North);
+        assert_eq!(Direction::NorthEast.turn_right(), Direction::SouthEast);
+        assert_eq!(Direction::NorthWest.turn_right(), Direction::NorthEast);
+        assert_eq!(Direction::SouthEast.turn_right(), Direction::SouthWest);
+        assert_eq!(Direction::SouthWest.turn_right(), Direction::NorthWest);
     }
 
     #[test]
     fn test_direction_left() {
-        assert_eq!(Direction::North.left(), Direction::West);
-        assert_eq!(Direction::South.left(), Direction::East);
-        assert_eq!(Direction::East.left(), Direction::North);
-        assert_eq!(Direction::West.left(), Direction::South);
-        assert_eq!(Direction::NorthEast.left(), Direction::NorthWest);
-        assert_eq!(Direction::NorthWest.left(), Direction::SouthWest);
-        assert_eq!(Direction::SouthEast.left(), Direction::NorthEast);
-        assert_eq!(Direction::SouthWest.left(), Direction::SouthEast);
+        assert_eq!(Direction::North.turn_left(), Direction::West);
+        assert_eq!(Direction::South.turn_left(), Direction::East);
+        assert_eq!(Direction::East.turn_left(), Direction::North);
+        assert_eq!(Direction::West.turn_left(), Direction::South);
+        assert_eq!(Direction::NorthEast.turn_left(), Direction::NorthWest);
+        assert_eq!(Direction::NorthWest.turn_left(), Direction::SouthWest);
+        assert_eq!(Direction::SouthEast.turn_left(), Direction::NorthEast);
+        assert_eq!(Direction::SouthWest.turn_left(), Direction::SouthEast);
     }
 
     #[test]
@@ -236,6 +796,7 @@ pub struct Tile {
     is_safe_zone: bool,
     is_spawn_point: bool,
     elevation: Option<u32>,
+
 }
 
 impl TileTrait for Tile {
@@ -250,6 +811,7 @@ impl TileTrait for Tile {
                 TileType::Earth => Some(0), // Default elevation for Earth tiles
                 _ => None, // Other tiles do not have an elevation
             },
+
         }
     }
     // add accessors for contents, is_safe_zone, is_spawn_point, and elevation
@@ -295,6 +857,7 @@ impl EarthTileTrait for Tile {
 }
 
 
+
 pub struct Grid {
     tiles: Vec<Vec<Tile>>,
     image_buffer_bg: Arc<Mutex<Option<ImageBuffer<Rgb<u8>, Vec<u8>>>>>,
@@ -318,6 +881,7 @@ impl Grid {
             image_buffer_fg: Arc::new(Mutex::new(None)),
         }
     }
+
 
 
     // get neighbors of a tile
@@ -623,7 +1187,7 @@ impl Grid {
                 return;
             }
         };
-        let circle_color = Rgb([255, 255, 0]);
+        let circle_color = COLOR_YELLOW;
         let (width, height) = img.dimensions();
         let center = (x, y);
         let radius = 5;
@@ -636,6 +1200,9 @@ impl Grid {
         }
 
         draw_filled_circle_mut(&mut img, center, radius, circle_color);
+
+        let cross_color = COLOR_CYAN;
+        draw_cross(&mut img, cross_color, x, y);
 
         *self.image_buffer_fg.lock().unwrap() = Some(img);
 
@@ -813,256 +1380,8 @@ mod tile_tests {
     }
 }
 
-// =================================================================================================
-// Items
 
 
-#[derive(Clone, Debug)]
-pub struct UsefulItem {
-    name: String,
-    use_value: u32,
-    // Add more properties as needed
-}
-
-impl UsefulItem {
-    pub fn new(name: String, use_value: u32) -> Self {
-        UsefulItem {
-            name,
-            use_value,
-        }
-    }
-
-    // Add getter methods to access the properties
-    pub fn get_name(&self) -> &String {
-        &self.name
-    }
-
-    pub fn get_use_value(&self) -> u32 {
-        self.use_value
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct FoodItem {
-    name: String,
-    nutritional_value: u32,
-    // Add more properties as needed
-}
-
-// derive debug for food item
-
-impl FoodItem {
-    pub fn new(name: String, nutritional_value: u32) -> Self {
-        FoodItem {
-            name,
-            nutritional_value,
-        }
-    }
-
-    // debug for food item
-    pub fn as_debug(&self) -> &dyn std::fmt::Debug {
-        self
-    }
-
-
-    // Add getter methods to access the properties
-    pub fn get_name(&self) -> &String {
-        &self.name
-    }
-
-    pub fn get_nutritional_value(&self) -> u32 {
-        self.nutritional_value
-    }
-}
-
-pub trait ItemTrait {
-    fn as_debug(&self) -> &dyn std::fmt::Debug;
-    fn get_name(&self) -> &String;
-    fn get_use_value(&self) -> u32;
-    fn get_nutritional_value(&self) -> u32;
-    // show item (on display)
-    fn show_item(&self) {
-        println!("Item: {}", self.get_name());
-    }
-}
-
-impl ItemTrait for FoodItem {
-    fn as_debug(&self) -> &dyn std::fmt::Debug {
-        self
-    }
-
-    fn get_name(&self) -> &String {
-        &self.name
-    }
-
-    fn get_use_value(&self) -> u32 {
-        0 // Food items do not have a use value
-    }
-
-    fn get_nutritional_value(&self) -> u32 {
-        self.nutritional_value
-    }
-}
-
-impl ItemTrait for UsefulItem {
-    fn as_debug(&self) -> &dyn Debug {
-        todo!()
-    }
-
-    // show item
-    fn show_item(&self) {
-        println!("Item: {}", self.get_name());
-    }
-
-    fn get_name(&self) -> &String {
-        &self.name
-    }
-
-    fn get_use_value(&self) -> u32 {
-        self.use_value
-    }
-
-    fn get_nutritional_value(&self) -> u32 {
-        0 // Useful items do not have a nutritional value
-    }
-}
-
-impl std::fmt::Debug for dyn ItemTrait {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.as_debug().fmt(f)
-    }
-}
-// a bag can hold items
-
-
-// derive debug for bag
-#[derive(Debug)]
-pub struct Bag {
-    items: Vec<Box<dyn ItemTrait>>,
-    size: u32,
-}
-
-impl Bag {
-    pub fn new(capacity: u32) -> Self {
-        Bag {
-            items: Vec::new(),
-            size: capacity,
-        }
-    }
-
-    pub fn add_item(&mut self, item: Box<dyn ItemTrait>) {
-        if self.items.len() < self.size as usize {
-            self.items.push(item);
-        }
-    }
-
-    pub fn remove_item(&mut self, index: usize) -> Option<Box<dyn ItemTrait>> {
-        if index < self.items.len() {
-            Some(self.items.remove(index))
-        } else {
-            None
-        }
-    }
-
-    // Add methods to get the total use value and nutritional value of the items in the bag
-    pub fn total_use_value(&self) -> u32 {
-        self.items.iter().map(|item| item.get_use_value()).sum()
-    }
-
-    pub fn total_nutritional_value(&self) -> u32 {
-        self.items.iter().map(|item| item.get_nutritional_value()).sum()
-    }
-
-
-    pub fn add_apple(&mut self) {
-        let apple = Box::new(FoodItem::new("Apple".to_string(), 50));
-        self.add_item(apple);
-    }
-
-    pub fn add_banana(&mut self) {
-        let banana = Box::new(FoodItem::new("Banana".to_string(), 100));
-        self.add_item(banana);
-    }
-
-    pub fn add_orange(&mut self) {
-        let orange = Box::new(FoodItem::new("Orange".to_string(), 60));
-        self.add_item(orange);
-    }
-
-    // Add more helper functions for other common food items...
-}
-
-#[cfg(test)]
-mod item_tests {
-    use super::*;
-
-    #[test]
-    fn test_bag_creation() {
-        let bag = Bag::new(5);
-        assert_eq!(bag.items.len(), 0);
-    }
-
-    #[test]
-    fn test_add_item() {
-        let mut bag = Bag::new(5);
-        let apple = Box::new(FoodItem::new("Apple".to_string(), 50));
-        bag.add_item(apple);
-        assert_eq!(bag.items.len(), 1);
-    }
-
-    #[test]
-    fn test_remove_item() {
-        let mut bag = Bag::new(5);
-        let apple = Box::new(FoodItem::new("Apple".to_string(), 50));
-        bag.add_item(apple);
-        let removed_item = bag.remove_item(0);
-        assert_eq!(removed_item.is_some(), true);
-        assert_eq!(bag.items.len(), 0);
-    }
-
-    #[test]
-    fn test_total_use_value() {
-        let mut bag = Bag::new(5);
-        let apple = Box::new(FoodItem::new("Apple".to_string(), 50));
-        let banana = Box::new(FoodItem::new("Banana".to_string(), 100));
-        bag.add_item(apple);
-        bag.add_item(banana);
-        assert_eq!(bag.total_use_value(), 0);
-    }
-
-    #[test]
-    fn test_total_nutritional_value() {
-        let mut bag = Bag::new(5);
-        let apple = Box::new(FoodItem::new("Apple".to_string(), 50));
-        let banana = Box::new(FoodItem::new("Banana".to_string(), 100));
-        bag.add_item(apple);
-        bag.add_item(banana);
-        assert_eq!(bag.total_nutritional_value(), 150);
-    }
-
-    #[test]
-    fn test_add_apple() {
-        let mut bag = Bag::new(5);
-        bag.add_apple();
-        assert_eq!(bag.items.len(), 1);
-    }
-
-    #[test]
-    fn test_add_banana() {
-        let mut bag = Bag::new(5);
-        bag.add_banana();
-        assert_eq!(bag.items.len(), 1);
-    }
-
-    #[test]
-    fn test_add_orange() {
-        let mut bag = Bag::new(5);
-        bag.add_orange();
-        assert_eq!(bag.items.len(), 1);
-    }
-
-    // Add more tests for other common food items...
-}
 
 
 // =================================================================================================
@@ -1083,6 +1402,7 @@ pub enum CharacterType {
 pub struct Character {
     name: String,
     character_type: CharacterType,
+    facing: Direction,
     health: u32,
     strength: u32,
     agility: u32,
@@ -1104,6 +1424,7 @@ impl Character {
             x_position,
             y_position,
             my_bag: Bag::new(15),
+            facing: Direction::North,
         }
     }
 
@@ -1141,13 +1462,39 @@ impl Character {
     }
 
 
-    // Other methods...
+    // move forward in the direction we are facing
+    pub fn move_forward(&mut self, grid: &Grid) {
+        self.move_character(self.facing, grid);
+    }
+
+    // move backward in the opposite direction we are facing
+    pub fn move_backward(&mut self, grid: &Grid) {
+        self.move_character(self.facing.opposite(), grid);
+    }
+
+
+    // turn the character left or right
+    pub fn turn_character(&mut self, direction: Direction) {
+        self.facing = direction;
+    }
+
+    // turn left
+    pub fn turn_left(&mut self) {
+        self.facing = self.facing.turn_left();
+    }
+
+    // turn right
+    pub fn turn_right(&mut self) {
+        self.facing = self.facing.turn_right();
+    }
 
 
     pub fn teleport_character(&mut self, x: usize, y: usize) {
         self.x_position = x;
         self.y_position = y;
     }
+
+    // end of Character struct
 }
 
 // a character can be a player or a computer controlled character
@@ -1455,6 +1802,11 @@ mod character_tests {
 #[derive(Debug)]
 pub enum Command {
     Move(Direction),
+    DisplayItemsAtXY(usize, usize),
+    TurnLeft,
+    TurnRight,
+    MoveForward,
+    MoveBackward,
     Teleport(usize, usize),
     AddApple,
     AddBanana,
@@ -1469,10 +1821,10 @@ pub enum Command {
     Unknown,
 }
 
-// parse user input into a command
+// parse command
 fn parse_command(input: &str) -> Command {
 
-    // check for no value, just return press
+    // check if the input is empty
     if input.trim().is_empty() {
         return Command::Unknown;
     }
@@ -1485,13 +1837,31 @@ fn parse_command(input: &str) -> Command {
             } else {
                 match parts[1].to_lowercase().as_str() {
                     "north" => Command::Move(Direction::North),
+                    "northeast" => Command::Move(Direction::NorthEast),
+                    "northwest" => Command::Move(Direction::NorthWest),
                     "south" => Command::Move(Direction::South),
+                    "southeast" => Command::Move(Direction::SouthEast),
+                    "southwest" => Command::Move(Direction::SouthWest),
                     "east" => Command::Move(Direction::East),
                     "west" => Command::Move(Direction::West),
                     _ => Command::Unknown,
                 }
             }
         }
+        "turn" => {
+            if parts.len() < 2 {
+                Command::Unknown
+            } else {
+                match parts[1].to_lowercase().as_str() {
+                    "left" => Command::TurnLeft,
+                    "right" => Command::TurnRight,
+                    _ => Command::Unknown,
+                }
+            }
+        }
+        "forward" => Command::MoveForward,
+        "backward" => Command::MoveBackward,
+
         "teleport" => {
             if parts.len() < 3 {
                 Command::Unknown
@@ -1538,12 +1908,28 @@ fn parse_command(input: &str) -> Command {
         }
         "quit" => Command::Quit,
         "help" => Command::Help,
+
+        // display items from MapItems at x,y
+        "display" => {
+            if parts.len() < 3 {
+                Command::Unknown
+            } else {
+                let x = parts[1].parse().unwrap_or(0);
+                let y = parts[2].parse().unwrap_or(0);
+                Command::DisplayItemsAtXY(x, y)
+            }
+        }
         _ => Command::Unknown,
     }
 }
 
+
+
+
+
+
 // execute a command
-fn execute_command(command: Command, manager: &mut CharacterManager, grid: &mut Grid) {
+fn execute_command(command: Command, manager: &mut CharacterManager, grid: &mut Grid, items: &mut MapItemGrid) {
     let mut player: &mut Character = manager.get_character_mut(0).unwrap();
     match command {
         Command::Move(direction) => {
@@ -1588,29 +1974,65 @@ fn execute_command(command: Command, manager: &mut CharacterManager, grid: &mut 
         Command::Help => {
             println!("Available commands:");
             println!("move <direction> - Move the player character in the specified direction (north, south, east, west)");
+
+            // turn
+            println!("turn <direction> - Turn the player character in the specified direction (left, right)");
+            println!("forward - Move the player character forward in the direction they are facing");
+            println!("backward - Move the player character backward in the opposite direction they are facing");
+
+
             println!("teleport <x> <y> - Teleport the player character to the specified position");
             println!("add <item> - Add an item to the player character's bag (apple, banana, orange)");
             println!("list characters - List all characters in the character manager");
             println!("list items - List all items in the player character's bag");
             println!("show item - Show the first item in the player character's bag");
             println!("show character - Show the player character's details");
+            println!("show map - Show the map with the player character's position");
+
+            // display
+            println!("display <x> <y> - Display items at the specified position");
+
+
             println!("quit - Quit the program");
             println!("help - Show available commands");
         }
         Command::Unknown => {
             println!("Unknown command. Type 'help' to see available commands.");
         }
+        Command::TurnLeft => {
+            player.turn_left();
+        }
+        Command::TurnRight => {
+            player.turn_right();
+        }
+        Command::MoveForward => {
+            player.move_forward(grid);
+        }
+        Command::MoveBackward => {
+            player.move_backward(grid);
+        }
+        Command::DisplayItemsAtXY(x, y) => {
+            let tile_items = items.get_items_at(x, y);
+            if tile_items.is_empty() {
+                println!("No items found at position: ({}, {})", x, y);
+            } else {
+                println!("Items found at position: ({}, {})", x, y);
+                for item in tile_items {
+                    println!("Item: {}", item.get_item().get_name());
+                }
+            }
+        }
     }
 }
 
 // command loop
-fn command_loop(manager: &mut CharacterManager, grid: &mut Grid) {
+fn command_loop(manager: &mut CharacterManager, grid: &mut Grid, items: &mut MapItemGrid) {
     println!("Enter command: ");
     loop {
         let mut input = String::new();
         std::io::stdin().read_line(&mut input).unwrap();
         let command = parse_command(&input);
-        execute_command(command, manager, grid);
+        execute_command(command, manager, grid, items);
         println!("Enter command: ");
     }
 }
@@ -1620,7 +2042,7 @@ fn main() {
     println!("Processing map ... ");
 
     let mut grid = GRID.lock().unwrap();
-
+    let mut items = MapItemGrid::new(2048);
     let mut manager = CharacterManager::new();
     let player = Player::new("Kevin".to_string(),
                              CharacterType::Human,
@@ -1651,12 +2073,13 @@ fn main() {
     grid.set_boundary_margin(5);
     grid.generate_elevation_png("elevation.png");
 
+    items.add_random_food_items(8000);
 
     // start the command loop
     // display "ready"
     println!("Ready!");
 
-    command_loop(&mut manager, &mut grid);
+    command_loop(&mut manager, &mut grid, &mut items);
 
 
 }
