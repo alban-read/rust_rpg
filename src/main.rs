@@ -1,3 +1,4 @@
+// (c) Alban 2024
 use std::cell::RefCell;
 use std::fmt::Debug;
 use std::io::Read;
@@ -2297,3 +2298,6 @@ fn main() {
 
     command_loop(&mut manager, &mut grid, &mut items);
 }
+
+// =================================================================================================
+// <EOT>
