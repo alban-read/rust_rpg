@@ -6,12 +6,13 @@ use imageproc::drawing::{draw_filled_circle, draw_filled_rect, draw_hollow_rect,
 use imageproc::pixelops::interpolate;
 use rayon::prelude::*;
 use lazy_static::lazy_static;
+use once_cell::sync::Lazy;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use imageproc::point::Point;
 use imageproc::rect::Rect;
 use noise::{NoiseFn, Perlin, Seedable};
-use rand::prelude::IteratorRandom;
+use rand::prelude::{IteratorRandom, ThreadRng};
 use rand::Rng;
 
 
@@ -204,7 +205,7 @@ impl FoodItem {
     }
 }
 
-pub trait ItemTrait {
+pub trait ItemTrait: Sync + Send {
     fn as_debug(&self) -> &dyn std::fmt::Debug;
     fn get_name(&self) -> &String;
     fn get_use_value(&self) -> u32;
@@ -243,7 +244,6 @@ impl ItemTrait for FoodItem {
     fn clone_box(&self) -> Box<dyn ItemTrait> {
         Box::new(self.clone())
     }
-
 }
 
 impl ItemTrait for UsefulItem {
@@ -271,7 +271,6 @@ impl ItemTrait for UsefulItem {
     fn clone_box(&self) -> Box<dyn ItemTrait> {
         Box::new(self.clone())
     }
-
 }
 
 impl std::fmt::Debug for dyn ItemTrait {
@@ -339,6 +338,79 @@ impl Bag {
     // Add more helper functions for other common food items...
 }
 
+static FOOD_ITEMS: Lazy<Vec<Box<dyn ItemTrait>>> = Lazy::new(|| {
+    vec![
+        Box::new(FoodItem::new("Apple".to_string(), 10)),
+        Box::new(FoodItem::new("Banana".to_string(), 15)),
+        Box::new(FoodItem::new("Orange".to_string(), 20)),
+        Box::new(FoodItem::new("Grapes".to_string(), 25)),
+        Box::new(FoodItem::new("Strawberry".to_string(), 30)),
+        Box::new(FoodItem::new("Blueberry".to_string(), 35)),
+        Box::new(FoodItem::new("Raspberry".to_string(), 40)),
+        Box::new(FoodItem::new("Blackberry".to_string(), 45)),
+        Box::new(FoodItem::new("Pineapple".to_string(), 50)),
+        Box::new(FoodItem::new("Watermelon".to_string(), 55)),
+        Box::new(FoodItem::new("Kiwi".to_string(), 60)),
+        Box::new(FoodItem::new("Mango".to_string(), 65)),
+        Box::new(FoodItem::new("Peach".to_string(), 70)),
+        Box::new(FoodItem::new("Plum".to_string(), 75)),
+        Box::new(FoodItem::new("Cherry".to_string(), 80)),
+        Box::new(FoodItem::new("Pear".to_string(), 85)),
+        Box::new(FoodItem::new("Pomegranate".to_string(), 90)),
+        Box::new(FoodItem::new("Apricot".to_string(), 95)),
+        Box::new(FoodItem::new("Cantaloupe".to_string(), 100)),
+        Box::new(FoodItem::new("Honeydew".to_string(), 105)),
+        Box::new(FoodItem::new("Lemon".to_string(), 110)),
+        Box::new(FoodItem::new("Lime".to_string(), 115)),
+        Box::new(FoodItem::new("Coconut".to_string(), 120)),
+        Box::new(FoodItem::new("Grapefruit".to_string(), 125)),
+        Box::new(FoodItem::new("Tangerine".to_string(), 130)),
+        Box::new(FoodItem::new("Nectarine".to_string(), 135)),
+        Box::new(FoodItem::new("Persimmon".to_string(), 140)),
+        Box::new(FoodItem::new("Starfruit".to_string(), 145)),
+        Box::new(FoodItem::new("Passionfruit".to_string(), 150)),
+        Box::new(FoodItem::new("Dragonfruit".to_string(), 155)),
+        Box::new(FoodItem::new("Guava".to_string(), 160)),
+        Box::new(FoodItem::new("Papaya".to_string(), 165)),
+        Box::new(FoodItem::new("Lychee".to_string(), 170)),
+        Box::new(FoodItem::new("Jackfruit".to_string(), 175)),
+        Box::new(FoodItem::new("Durian".to_string(), 180)),
+        Box::new(FoodItem::new("Mangosteen".to_string(), 185)),
+        Box::new(FoodItem::new("Kiwi".to_string(), 190)),
+        Box::new(FoodItem::new("Pineapple".to_string(), 195)),
+        Box::new(FoodItem::new("Watermelon".to_string(), 200)),
+        Box::new(FoodItem::new("EnergyDrink".to_string(), 200)),
+    ]
+});
+
+fn get_random_food_item(rng: &mut ThreadRng) -> &Box<dyn ItemTrait> {
+    let random_index = rng.gen_range(0..FOOD_ITEMS.len());
+    &FOOD_ITEMS[random_index]
+}
+
+static USEFUL_ITEMS: Lazy<Vec<Box<dyn ItemTrait>>> = Lazy::new(|| {
+    vec![
+        Box::new(UsefulItem::new("Medkit".to_string(), 50)),
+        Box::new(UsefulItem::new("Axe".to_string(), 45)),
+        Box::new(UsefulItem::new("Shovel".to_string(), 50)),
+        Box::new(UsefulItem::new("Pickaxe".to_string(), 55)),
+        Box::new(UsefulItem::new("Knife".to_string(), 60)),
+        Box::new(UsefulItem::new("Sword".to_string(), 65)),
+        Box::new(UsefulItem::new("Shield".to_string(), 70)),
+        Box::new(UsefulItem::new("Bow".to_string(), 75)),
+        Box::new(UsefulItem::new("Crossbow".to_string(), 80)),
+        Box::new(UsefulItem::new("Arrows".to_string(), 85)),
+    ]
+});
+
+fn get_random_useful_item(rng: &mut ThreadRng) -> &Box<dyn ItemTrait> {
+    let random_index = rng.gen_range(0..USEFUL_ITEMS.len());
+    &USEFUL_ITEMS[random_index] // Return a reference to the random useful item
+}
+
+
+
+
 
 // =================================================================================================
 // map items
@@ -353,7 +425,6 @@ pub struct MapItem {
 
 // MapItem implementation
 impl MapItem {
-
     pub fn new(item: Box<dyn ItemTrait>, x: usize, y: usize) -> Self {
         MapItem {
             item,
@@ -378,7 +449,6 @@ pub struct MapItemGrid {
 
 // MapItemGrid implementation
 impl MapItemGrid {
-
     pub fn new(size: usize) -> Self {
         let mut items = Vec::new();
         for _ in 0..size {
@@ -408,64 +478,36 @@ impl MapItemGrid {
 
     // add random food items to the map
     pub fn add_random_food_items(&mut self, num_items: usize) {
-        let size=2048; // map size
+        let size = 2048; // map size
         let mut rng = rand::thread_rng();
         for _ in 0..num_items {
             // choose a random map position
             let x = rng.gen_range(0..size);
             let y = rng.gen_range(0..size);
-            // create a collection of food items to select from
-            let food_items: Vec<Box<dyn ItemTrait>> = vec![
-                Box::new(FoodItem::new("Apple".to_string(), 10)),
-                Box::new(FoodItem::new("Banana".to_string(), 15)),
-                Box::new(FoodItem::new("Orange".to_string(), 20)),
-                Box::new(FoodItem::new("Grapes".to_string(), 25)),
-                Box::new(FoodItem::new("Strawberry".to_string(), 30)),
-                Box::new(FoodItem::new("Blueberry".to_string(), 35)),
-                Box::new(FoodItem::new("Raspberry".to_string(), 40)),
-                Box::new(FoodItem::new("Blackberry".to_string(), 45)),
-                Box::new(FoodItem::new("Pineapple".to_string(), 50)),
-                Box::new(FoodItem::new("Watermelon".to_string(), 55)),
-                Box::new(FoodItem::new("Kiwi".to_string(), 60)),
-                Box::new(FoodItem::new("Mango".to_string(), 65)),
-                Box::new(FoodItem::new("Peach".to_string(), 70)),
-                Box::new(FoodItem::new("Plum".to_string(), 75)),
-                Box::new(FoodItem::new("Cherry".to_string(), 80)),
-                Box::new(FoodItem::new("Pear".to_string(), 85)),
-                Box::new(FoodItem::new("Pomegranate".to_string(), 90)),
-                Box::new(FoodItem::new("Apricot".to_string(), 95)),
-                Box::new(FoodItem::new("Cantaloupe".to_string(), 100)),
-                Box::new(FoodItem::new("Honeydew".to_string(), 105)),
-                Box::new(FoodItem::new("Lemon".to_string(), 110)),
-                Box::new(FoodItem::new("Lime".to_string(), 115)),
-                Box::new(FoodItem::new("Coconut".to_string(), 120)),
-                Box::new(FoodItem::new("Grapefruit".to_string(), 125)),
-                Box::new(FoodItem::new("Tangerine".to_string(), 130)),
-                Box::new(FoodItem::new("Nectarine".to_string(), 135)),
-                Box::new(FoodItem::new("Persimmon".to_string(), 140)),
-                Box::new(FoodItem::new("Starfruit".to_string(), 145)),
-                Box::new(FoodItem::new("Passionfruit".to_string(), 150)),
-                Box::new(FoodItem::new("Dragonfruit".to_string(), 155)),
-                Box::new(FoodItem::new("Guava".to_string(), 160)),
-                Box::new(FoodItem::new("Papaya".to_string(), 165)),
-                Box::new(FoodItem::new("Lychee".to_string(), 170)),
-                Box::new(FoodItem::new("Jackfruit".to_string(), 175)),
-                Box::new(FoodItem::new("Durian".to_string(), 180)),
-                Box::new(FoodItem::new("Mangosteen".to_string(), 185)),
-                Box::new(FoodItem::new("Kiwi".to_string(), 190)),
-                Box::new(FoodItem::new("Pineapple".to_string(), 195)),
-                Box::new(FoodItem::new("Watermelon".to_string(), 200)),
-            ];
-            // randomly choose one item from the collection
-            let random_index = rng.gen_range(0..food_items.len());
-            let food_item = &food_items[random_index];
+            let food_item = get_random_food_item(&mut rng);
             // create a new MapItem with the chosen food item and add it to the map
             let map_item = MapItem::new(food_item.clone(), x, y);
             self.add_item(map_item);
             // println!("Added food item: {} at position: ({}, {})", food_item.get_name(), x, y);
-
         }
     }
+
+    // add random useful items to the map
+    pub fn add_random_useful_items(&mut self, num_items: usize) {
+        let size = 2048; // map size
+        let mut rng = rand::thread_rng();
+        for _ in 0..num_items {
+            // choose a random map position
+            let x = rng.gen_range(0..size);
+            let y = rng.gen_range(0..size);
+            let useful_item = get_random_useful_item(&mut rng);
+            // create a new MapItem with the chosen useful item and add it to the map
+            let map_item = MapItem::new(useful_item.clone(), x, y);
+            self.add_item(map_item);
+            // println!("Added useful item: {} at position: ({}, {})", useful_item.get_name(), x, y);
+        }
+    }
+
 
     // get items at x,y location
     pub fn get_items_at(&self, x: usize, y: usize) -> Vec<&MapItem> {
@@ -490,14 +532,8 @@ impl MapItemGrid {
     }
 
 
-
-
     // end of MapItemGrid struct
 }
-
-
-
-
 
 
 #[cfg(test)]
@@ -857,7 +893,6 @@ impl EarthTileTrait for Tile {
 }
 
 
-
 pub struct Grid {
     tiles: Vec<Vec<Tile>>,
     image_buffer_bg: Arc<Mutex<Option<ImageBuffer<Rgb<u8>, Vec<u8>>>>>,
@@ -881,7 +916,6 @@ impl Grid {
             image_buffer_fg: Arc::new(Mutex::new(None)),
         }
     }
-
 
 
     // get neighbors of a tile
@@ -1177,7 +1211,7 @@ impl Grid {
         draw_filled_circle_mut(&mut img, center, radius, color);
     }
 
-    pub fn do_draw_circle(&self, x:i32, y:i32) {
+    pub fn do_draw_circle(&self, x: i32, y: i32) {
 
         // Lock the image buffer and clone it
         let mut img = match self.clone_and_lock_fg() {
@@ -1205,9 +1239,7 @@ impl Grid {
         draw_cross(&mut img, cross_color, x, y);
 
         *self.image_buffer_fg.lock().unwrap() = Some(img);
-
     }
-
 
 
     // save fg image buffer to a png file
@@ -1224,7 +1256,6 @@ impl Grid {
         // Save the image buffer to a file
         img.save(filename).unwrap();
     }
-
 
 
 // end of Grid struct
@@ -1379,9 +1410,6 @@ mod tile_tests {
         assert_eq!(boundary_water_tile, (0, 0));
     }
 }
-
-
-
 
 
 // =================================================================================================
@@ -1924,10 +1952,6 @@ fn parse_command(input: &str) -> Command {
 }
 
 
-
-
-
-
 // execute a command
 fn execute_command(command: Command, manager: &mut CharacterManager, grid: &mut Grid, items: &mut MapItemGrid) {
     let mut player: &mut Character = manager.get_character_mut(0).unwrap();
@@ -2080,6 +2104,4 @@ fn main() {
     println!("Ready!");
 
     command_loop(&mut manager, &mut grid, &mut items);
-
-
 }
