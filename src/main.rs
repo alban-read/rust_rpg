@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::fmt::Debug;
 use std::io::Read;
+use std::any::Any;
 use image::{ImageBuffer, Rgb};
 use imageproc::drawing::{draw_filled_circle, draw_filled_rect, draw_hollow_rect, draw_antialiased_line_segment, draw_polygon_mut, draw_filled_circle_mut, draw_cross};
 use imageproc::pixelops::interpolate;
@@ -207,6 +208,7 @@ impl FoodItem {
 
 pub trait ItemTrait: Sync + Send {
     fn as_debug(&self) -> &dyn std::fmt::Debug;
+    fn as_any(&self) -> &dyn Any;
     fn get_name(&self) -> &String;
     fn get_use_value(&self) -> u32;
     fn get_nutritional_value(&self) -> u32;
@@ -215,6 +217,8 @@ pub trait ItemTrait: Sync + Send {
         println!("Item: {}", self.get_name());
     }
     fn clone_box(&self) -> Box<dyn ItemTrait>;
+
+
 }
 
 impl Clone for Box<dyn ItemTrait> {
@@ -228,7 +232,7 @@ impl ItemTrait for FoodItem {
     fn as_debug(&self) -> &dyn std::fmt::Debug {
         self
     }
-
+    fn as_any(&self) -> &dyn Any { self }
     fn get_name(&self) -> &String {
         &self.name
     }
@@ -250,7 +254,7 @@ impl ItemTrait for UsefulItem {
     fn as_debug(&self) -> &dyn Debug {
         todo!()
     }
-
+    fn as_any(&self) -> &dyn Any { self }
     fn get_name(&self) -> &String {
         &self.name
     }
@@ -278,9 +282,10 @@ impl std::fmt::Debug for dyn ItemTrait {
         self.as_debug().fmt(f)
     }
 }
-// a bag can hold items
 
 
+
+// a bag can hold items, a character has a bag.
 // derive debug for bag
 #[derive(Debug)]
 pub struct Bag {
@@ -400,6 +405,9 @@ static USEFUL_ITEMS: Lazy<Vec<Box<dyn ItemTrait>>> = Lazy::new(|| {
         Box::new(UsefulItem::new("Bow".to_string(), 75)),
         Box::new(UsefulItem::new("Crossbow".to_string(), 80)),
         Box::new(UsefulItem::new("Arrows".to_string(), 85)),
+        Box::new(UsefulItem::new("Bolts".to_string(), 90)),
+        Box::new(UsefulItem::new("Quiver".to_string(), 95)),
+        // Add more useful items as needed
     ]
 });
 
@@ -407,9 +415,6 @@ fn get_random_useful_item(rng: &mut ThreadRng) -> &Box<dyn ItemTrait> {
     let random_index = rng.gen_range(0..USEFUL_ITEMS.len());
     &USEFUL_ITEMS[random_index] // Return a reference to the random useful item
 }
-
-
-
 
 
 // =================================================================================================
@@ -440,6 +445,13 @@ impl MapItem {
     pub fn get_item(&self) -> &Box<dyn ItemTrait> {
         &self.item
     }
+
+    // remove this item from the map at x,y
+
+
+
+
+    // end of MapItem struct
 }
 
 // map item grid
@@ -468,9 +480,20 @@ impl MapItemGrid {
         self.items[x][y] = Some(item);
     }
 
-    pub fn remove_item(&mut self, x: usize, y: usize) {
+    pub fn remove_items(&mut self, x: usize, y: usize) {
         self.items[x][y] = None;
     }
+
+    pub fn remove_named_item_at(&mut self, x: usize, y: usize, item_name: &String) {
+        if let Some(map_item) = &mut self.items[x][y] {
+            if map_item.get_item().get_name() == item_name {
+                self.items[x][y] = None;
+            }
+        }
+    }
+
+
+
 
     pub fn get_item(&self, x: usize, y: usize) -> Option<&MapItem> {
         self.items[x][y].as_ref()
@@ -1431,6 +1454,7 @@ pub struct Character {
     name: String,
     character_type: CharacterType,
     facing: Direction,
+    energy: u32,
     health: u32,
     strength: u32,
     agility: u32,
@@ -1451,6 +1475,7 @@ impl Character {
             intelligence,
             x_position,
             y_position,
+            energy: 1000,
             my_bag: Bag::new(15),
             facing: Direction::North,
         }
@@ -1482,6 +1507,19 @@ impl Character {
         if let TileType::Boundary = grid.tiles[(self.x_position as i32 + dx) as usize][(self.y_position as i32 + dy) as usize].tile_type {
             // display boundary message
             println!("You cannot move beyond the boundary of this world");
+            return;
+        }
+
+        // reduce energy when moving - based on the cost of moving
+        let cost = grid.get_cost(self.x_position, self.y_position, (self.x_position as i32 + dx) as usize, (self.y_position as i32 + dy) as usize);
+        self.energy -= cost as u32;
+
+        // display the energy level and cost of moving
+        println!("Energy: {}, Cost: {}", self.energy, cost);
+
+        // check if the character has enough energy to move
+        if self.energy < 0 {
+            println!("You do not have enough energy to move");
             return;
         }
 
@@ -1830,6 +1868,8 @@ mod character_tests {
 #[derive(Debug)]
 pub enum Command {
     Move(Direction),
+    EatItemByName(String),
+    GetItemByName(String),
     DisplayItemsAtXY(usize, usize),
     TurnLeft,
     TurnRight,
@@ -1841,6 +1881,7 @@ pub enum Command {
     AddOrange,
     ListCharacters,
     ListItems,
+    LookAround,
     ShowItem,
     ShowCharacter,
     ShowMap,
@@ -1849,8 +1890,24 @@ pub enum Command {
     Unknown,
 }
 
+
+// parse subcommand for items
+fn parse_item_command(input: &str) -> Command {
+    let parts: Vec<&str> = input.trim().split_whitespace().collect();
+    match parts[0].to_lowercase().as_str() {
+        "apple" => Command::AddApple,
+        "banana" => Command::AddBanana,
+        "orange" => Command::AddOrange,
+        _ => Command::Unknown,
+    }
+}
+
+
 // parse command
 fn parse_command(input: &str) -> Command {
+
+    // define a vector of noise words
+    let noise_words = vec!["in", "at", "to", "the", "a", "an", ","];
 
     // check if the input is empty
     if input.trim().is_empty() {
@@ -1858,6 +1915,9 @@ fn parse_command(input: &str) -> Command {
     }
 
     let parts: Vec<&str> = input.trim().split_whitespace().collect();
+    // filter out noise words
+    let parts: Vec<&str> = parts.iter().filter(|&part| !noise_words.contains(&part)).map(|&part| part).collect();
+
     match parts[0].to_lowercase().as_str() {
         "move" => {
             if parts.len() < 2 {
@@ -1887,6 +1947,7 @@ fn parse_command(input: &str) -> Command {
                 }
             }
         }
+        "fd" => Command::MoveForward, // alias for "forward"
         "forward" => Command::MoveForward,
         "backward" => Command::MoveBackward,
 
@@ -1903,14 +1964,26 @@ fn parse_command(input: &str) -> Command {
             if parts.len() < 2 {
                 Command::Unknown
             } else {
-                match parts[1].to_lowercase().as_str() {
-                    "apple" => Command::AddApple,
-                    "banana" => Command::AddBanana,
-                    "orange" => Command::AddOrange,
-                    _ => Command::Unknown,
-                }
+                parse_item_command(parts[1])
             }
         }
+
+        "eat" => {
+            if parts.len() < 2 {
+                Command::Unknown
+            } else {
+                Command::EatItemByName(parts[1].to_string())
+            }
+        }
+
+        "get" => {
+            if parts.len() < 2 {
+                Command::Unknown
+            } else {
+                Command::GetItemByName(parts[1].to_string())
+            }
+        }
+
         "list" => {
             if parts.len() < 2 {
                 Command::Unknown
@@ -1927,9 +2000,21 @@ fn parse_command(input: &str) -> Command {
                 Command::Unknown
             } else {
                 match parts[1].to_lowercase().as_str() {
+                    "bag" => Command::ListItems, // alias for "list items
                     "item" => Command::ShowItem,
                     "character" => Command::ShowCharacter,
                     "map" => Command::ShowMap,
+                    _ => Command::Unknown,
+                }
+            }
+        }
+        // look around
+        "look" => {
+            if parts.len() < 2 {
+                Command::Unknown
+            } else {
+                match parts[1].to_lowercase().as_str() {
+                    "around" => Command::LookAround,
                     _ => Command::Unknown,
                 }
             }
@@ -1954,6 +2039,12 @@ fn parse_command(input: &str) -> Command {
 
 // execute a command
 fn execute_command(command: Command, manager: &mut CharacterManager, grid: &mut Grid, items: &mut MapItemGrid) {
+
+    fn is_food(item: &Box<dyn ItemTrait>) -> bool {
+        item.as_any().downcast_ref::<FoodItem>().is_some()
+    }
+
+
     let mut player: &mut Character = manager.get_character_mut(0).unwrap();
     match command {
         Command::Move(direction) => {
@@ -1975,7 +2066,13 @@ fn execute_command(command: Command, manager: &mut CharacterManager, grid: &mut 
             manager.list_characters();
         }
         Command::ListItems => {
-            player.my_bag.items.iter().for_each(|item| item.show_item());
+            // check if bag is empty
+            if player.my_bag.items.is_empty() {
+                println!("No items found in the bag");
+            } else {
+                // display items in the player's bag
+                player.my_bag.items.iter().for_each(|item| item.show_item());
+            }
         }
         Command::ShowItem => {
             if let Some(item) = player.my_bag.items.first() {
@@ -2046,6 +2143,90 @@ fn execute_command(command: Command, manager: &mut CharacterManager, grid: &mut 
                 }
             }
         }
+        Command::LookAround => {
+            // say "taking a look around"
+            println!("Taking a look around ...");
+            // display items around the player character
+            let x = player.x_position;
+            let y = player.y_position;
+            let mut found_items = false;
+            for dx in -1..=1 {
+                for dy in -1..=1 {
+                    let tile_items = items.get_items_at((x as i32 + dx) as usize, (y as i32 + dy) as usize);
+                    if !tile_items.is_empty() {
+                        found_items = true;
+                        println!("Items found nearby at position: ({}, {})", x as i32 + dx, y as i32 + dy);
+
+                        // compare x,y with dx, dy, and work out the direction
+                        let direction = match (dx, dy) {
+                            (0, -1) => "north",
+                            (1, -1) => "northeast",
+                            (1, 0) => "east",
+                            (1, 1) => "southeast",
+                            (0, 1) => "south",
+                            (-1, 1) => "southwest",
+                            (-1, 0) => "west",
+                            (-1, -1) => "northwest",
+                            (0, 0) => "here", // should not happen
+                            _ => "unknown",
+                        };
+                        println!("Direction of item: {}", direction);
+
+                        for item in tile_items {
+                            println!("Item: {}", item.get_item().get_name());
+                        }
+                    }
+                }
+            }
+        }
+        Command::EatItemByName(item_name) => {
+            let item = player.my_bag.items.iter().find(|item| {
+                let item_name_lowercase = item.get_name().to_lowercase();
+                let input_name_lowercase = item_name.to_lowercase();
+                item_name_lowercase == input_name_lowercase
+            });
+
+            if let Some(item) = item {
+                println!("Eating item: {}", item.get_name());
+                // check if item is food
+                if is_food(item) {
+                    // increase player's energy
+                    player.energy += item.get_nutritional_value();
+                    println!("Energy increased by: {}", item.get_nutritional_value());
+                } else {
+                    println!("Item is not food");
+                }
+
+
+                // remove item from the bag (lowercase the comparison)
+                player.my_bag.items.retain(|item| *item.get_name().to_lowercase() != item_name.to_lowercase());
+            } else {
+                println!("Item not found in the bag");
+            }
+        }
+
+        Command::GetItemByName(item_name) => {
+
+            // find the items at the players location
+            let tile_items = items.get_items_at(player.x_position, player.y_position);
+            let item = tile_items.iter().find(|item| {
+                let item_name_lowercase = item.get_item().get_name().to_lowercase();
+                let input_name_lowercase = item_name.to_lowercase();
+                item_name_lowercase == input_name_lowercase
+            });
+            // if item is found add to player's bag
+            if let Some(item) = item {
+                println!("Getting item: {}", item.get_item().get_name());
+                player.my_bag.items.push(item.get_item().clone());
+                // remove named item from map
+                let item_name = item.get_item().get_name().clone();
+                items.remove_named_item_at(player.x_position, player.y_position, &item_name);
+
+            } else {
+                println!("Item not found at position: ({}, {})", player.x_position, player.y_position);
+            }
+
+        }
     }
 }
 
@@ -2055,16 +2236,26 @@ fn command_loop(manager: &mut CharacterManager, grid: &mut Grid, items: &mut Map
     loop {
         let mut input = String::new();
         std::io::stdin().read_line(&mut input).unwrap();
-        let command = parse_command(&input);
-        execute_command(command, manager, grid, items);
+
+        // handle multiple commands separated by semicolon
+        let commands: Vec<&str> = input.trim().split(";").collect();
+        for command in commands {
+            let command = parse_command(command);
+            execute_command(command, manager, grid, items);
+        }
         println!("Enter command: ");
     }
 }
 
 
+// main function
+// Things get a little hairy here, but we are just initializing the grid, items, and character manager
+// and starting the command loop
+
 fn main() {
     println!("Processing map ... ");
 
+    // mutable grid
     let mut grid = GRID.lock().unwrap();
     let mut items = MapItemGrid::new(2048);
     let mut manager = CharacterManager::new();
@@ -2082,7 +2273,7 @@ fn main() {
     manager.add_player(player);
 
     // add troll
-    let troll = ComputerControlledCharacter::new("Troll".to_string(),
+    let troll = ComputerControlledCharacter::new("Trevor".to_string(),
                                                  CharacterType::Troll,
                                                  200,
                                                  20,
@@ -2097,7 +2288,8 @@ fn main() {
     grid.set_boundary_margin(5);
     grid.generate_elevation_png("elevation.png");
 
-    items.add_random_food_items(8000);
+    items.add_random_food_items(38000);
+    items.add_random_useful_items(1000);
 
     // start the command loop
     // display "ready"
