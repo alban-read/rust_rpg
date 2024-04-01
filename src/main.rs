@@ -950,10 +950,12 @@ impl TileTrait for Tile {
         &self.tile_type
     }
 
-    // is_not_water
+    // is_not_water, river, or boundary
     fn is_not_water(&self) -> bool {
         match self.tile_type {
             TileType::Water => false,
+            TileType::River => false,
+            TileType::Boundary => false,
             _ => true,
         }
     }
@@ -1330,9 +1332,9 @@ impl Grid {
                     // if tile type is not water
                     if self.get_tile(x, y).is_not_water() {
                         img.put_pixel(x as u32, y as u32, food_color);
-                        println!("Drawing food item: {} at position: ({}, {})", item.get_item().get_name(), x, y);
+                        // println!("Drawing food item: {} at position: ({}, {})", item.get_item().get_name(), x, y);
                         // display tile type
-                        println!("Tile type: {:?}", self.get_tile(x, y).get_tile_type_text());
+                        // println!("Tile type: {:?}", self.get_tile(x, y).get_tile_type_text());
                     }
                 }
             }
@@ -2192,7 +2194,6 @@ fn execute_command(command: Command, manager: &mut CharacterManager, grid: &mut 
         }
         Command::ShowMap => {
             println!("generating map ...");
-            println!("Generating map ...");
             let mut cloned_grid = grid.clone();
             let mut cloned_items = items.clone();
             let mut cloned_player = player.clone();
@@ -2415,7 +2416,7 @@ fn main() {
                                                  5,
                                                  5);
     manager.add_character(troll.character);
-    items.add_random_food_items(10000, &mut grid);
+    items.add_random_food_items(8000, &mut grid);
     items.add_random_useful_items(1000, &mut grid);
 
 
