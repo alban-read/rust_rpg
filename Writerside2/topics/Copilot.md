@@ -11,7 +11,7 @@ So this is a good test of how useful an assistant Copilot can be.
 Additionally, to Copilot, I am using JetBrains RustRover and the early preview of 
 Jetbrains WriterSide.
 
-Both of these are highly assistive tools.
+Both of these are highly assistive tools, and they work well together.
 
 The Copilot extension integrates with RustRover, providing completion, code creation, and chat features.
 
@@ -25,9 +25,17 @@ I will speak about Copilot as if it was a human assistant, however it is a compu
 
 The chat features, allow you to discuss issues like the design and organization of the program.
 
+You can describe objects, and discuss if they should be mutable.
+
+Copilot will recommend if they should be mutable, and why.
+
+This is a very useful feature, as it can be hard to know if an object should be mutable or not.
+
+## Design and organization
+
 Copilot will recommend quite high level organizational patterns.
 
-As well as writing complete functions for you if asked.
+As well as writing complete functions for you, it will recommend how to organize the functions.
 
 Copilot can also explain and document the way a function works in great detail.
 
@@ -51,6 +59,8 @@ The rust compiler, is horribly, annoyingly strict, and generates very clear erro
 Since rust is very strongly typed, it also allows the editor itself to detect lots of errors.
 Due to the strong typing, code completion is naturally very good, and I think this makes it easier for the Copilot to constrain
 the choices it makes as it recommends what should be typed next.
+
+## Code correctness and trust
 
 One thing I find hard to trust, when creating code I only partially understand, is code correctness.
 Is the code correct?
