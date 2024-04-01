@@ -1,10 +1,10 @@
 The game is a simple multiplayer role playing games.
 The main elements are:-
 
-## Charachters 
+## Characters 
 Characters with various abilities and stats are controlled by players or by the computer.
 A Character can be a player, a monster or a non-player character (NPC).
-A Charachter has many attributes like health, mana, strength, dexterity, intelligence, etc.
+A Character has many attributes like health, mana, strength, dexterity, intelligence, etc.
 The attributes of a character can be modified by items, spells, etc.
 A character can have many items in its inventory.
 A character can use items, spells, etc. to modify its attributes or to attack other characters.
@@ -109,10 +109,10 @@ The game must be able to receive text input.
 Interpreter
 The game must be able to interpret text input.
 The game must be able to interpret commands.
-Commmand must be able to control characters.
-Commmand must be able to control items.
-Commmand must be able to control the game world.
-Commmand must be able to control to render the game.
+Command must be able to control characters.
+Command must be able to control items.
+Command must be able to control the game world.
+Command must be able to control to render the game.
 
 ## Game Loop
 The game is divided into turns.

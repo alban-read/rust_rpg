@@ -10,7 +10,7 @@ use rayon::prelude::*;
 use lazy_static::lazy_static;
 use once_cell::sync::Lazy;
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 use imageproc::point::Point;
 use imageproc::rect::Rect;
 use noise::{NoiseFn, Perlin, Seedable};
@@ -218,8 +218,6 @@ pub trait ItemTrait: Sync + Send {
         println!("Item: {}", self.get_name());
     }
     fn clone_box(&self) -> Box<dyn ItemTrait>;
-
-
 }
 
 impl Clone for Box<dyn ItemTrait> {
@@ -283,7 +281,6 @@ impl std::fmt::Debug for dyn ItemTrait {
         self.as_debug().fmt(f)
     }
 }
-
 
 
 // a bag can hold items, a character has a bag.
@@ -450,8 +447,6 @@ impl MapItem {
     // remove this item from the map at x,y
 
 
-
-
     // end of MapItem struct
 }
 
@@ -494,25 +489,27 @@ impl MapItemGrid {
     }
 
 
-
-
     pub fn get_item(&self, x: usize, y: usize) -> Option<&MapItem> {
         self.items[x][y].as_ref()
     }
 
     // add random food items to the map
-    pub fn add_random_food_items(&mut self, num_items: usize) {
+    pub fn add_random_food_items(&mut self, num_items: usize, grid: &mut MutexGuard<Grid>) {
         let size = 2048; // map size
         let mut rng = rand::thread_rng();
         for _ in 0..num_items {
             // choose a random map position
             let x = rng.gen_range(0..size);
             let y = rng.gen_range(0..size);
-            let food_item = get_random_food_item(&mut rng);
-            // create a new MapItem with the chosen food item and add it to the map
-            let map_item = MapItem::new(food_item.clone(), x, y);
-            self.add_item(map_item);
-            // println!("Added food item: {} at position: ({}, {})", food_item.get_name(), x, y);
+            // check if the tile at x,y is not water
+
+            if grid.get_tile(x, y).is_not_water() {
+                let food_item = get_random_food_item(&mut rng);
+                // create a new MapItem with the chosen food item and add it to the map
+                let map_item = MapItem::new(food_item.clone(), x, y);
+                self.add_item(map_item);
+                // println!("Added food item: {} at position: ({}, {})", food_item.get_name(), x, y);
+            }
         }
     }
 
@@ -840,6 +837,8 @@ pub trait TileTrait {
     fn is_spawn_point(&self) -> bool;
     fn get_type(&self) -> &TileType;
     // Add more common functions as needed
+    // is_not_water
+    fn is_not_water(&self) -> bool;
 }
 
 pub trait EarthTileTrait {
@@ -871,25 +870,35 @@ impl TileTrait for Tile {
                 TileType::Earth => Some(0), // Default elevation for Earth tiles
                 _ => None, // Other tiles do not have an elevation
             },
-
         }
     }
+
+
     // add accessors for contents, is_safe_zone, is_spawn_point, and elevation
     fn is_safe_zone(&self) -> bool {
         self.is_safe_zone
     }
 
+
     fn is_spawn_point(&self) -> bool {
         self.is_spawn_point
     }
+
 
     fn get_type(&self) -> &TileType {
         &self.tile_type
     }
 
+    // is_not_water
+    fn is_not_water(&self) -> bool {
+        match self.tile_type {
+            TileType::Water => false,
+            _ => true,
+        }
+    }
+
     // Implement more common functions as needed
 }
-
 
 impl EarthTileTrait for Tile {
     fn get_elevation(&self) -> Option<u32> {
@@ -915,7 +924,6 @@ impl EarthTileTrait for Tile {
 
     // Implement more Earth-specific functions as needed
 }
-
 
 pub struct Grid {
     tiles: Vec<Vec<Tile>>,
@@ -1016,6 +1024,11 @@ impl Grid {
                 }
             }
         }
+    }
+
+    // get tile at x,y
+    pub fn get_tile(&self, x: usize, y: usize) -> &Tile {
+        &self.tiles[x][y]
     }
 
 
@@ -1234,6 +1247,32 @@ impl Grid {
 
         draw_filled_circle_mut(&mut img, center, radius, color);
     }
+
+    // set a pixel in yellow for every food item in the map
+    pub fn draw_food_items(&self, food_items: &MapItemGrid) {
+        // Lock the image buffer and clone it
+        let mut img = match self.clone_and_lock_fg() {
+            Some(value) => value,
+            None => {
+                println!("Warning: The image buffer is None");
+                return;
+            }
+        };
+
+        let food_color = Rgb([255, 255, 0]); // yellow
+        for x in 0..food_items.items.len() {
+            for y in 0..food_items.items[x].len() {
+                if let Some(item) = &food_items.items[x][y] {
+                    // let (x, y) = item.get_position();
+                    img.put_pixel(x as u32, y as u32, food_color);
+                    println!("Drawing food item: {} at position: ({}, {})", item.get_item().get_name(), x, y);
+                }
+            }
+        }
+
+        *self.image_buffer_fg.lock().unwrap() = Some(img);
+    }
+
 
     pub fn do_draw_circle(&self, x: i32, y: i32) {
 
@@ -1519,7 +1558,7 @@ impl Character {
         println!("Energy: {}, Cost: {}", self.energy, cost);
 
         // check if the character has enough energy to move
-        if self.energy < 0 {
+        if self.energy <= 0 {
             println!("You do not have enough energy to move");
             return;
         }
@@ -2009,6 +2048,8 @@ fn parse_command(input: &str) -> Command {
                 }
             }
         }
+        "me" => Command::ShowCharacter, // alias for "show character"
+
         // look around
         "look" => {
             if parts.len() < 2 {
@@ -2040,11 +2081,9 @@ fn parse_command(input: &str) -> Command {
 
 // execute a command
 fn execute_command(command: Command, manager: &mut CharacterManager, grid: &mut Grid, items: &mut MapItemGrid) {
-
     fn is_food(item: &Box<dyn ItemTrait>) -> bool {
         item.as_any().downcast_ref::<FoodItem>().is_some()
     }
-
 
     let mut player: &mut Character = manager.get_character_mut(0).unwrap();
     match command {
@@ -2086,6 +2125,7 @@ fn execute_command(command: Command, manager: &mut CharacterManager, grid: &mut 
         Command::ShowMap => {
             println!("generating map ...");
             grid.clear_image_fg();
+            grid.draw_food_items(&items);
             grid.do_draw_circle(player.x_position as i32, player.y_position as i32);
             grid.save_image_fg("map.png");
         }
@@ -2094,27 +2134,36 @@ fn execute_command(command: Command, manager: &mut CharacterManager, grid: &mut 
             std::process::exit(0);
         }
         Command::Help => {
-            println!("Available commands:");
+            println!("Several commands on one line; may be seperated by semicolons.");
+
+            println!("Movement:");
             println!("move <direction> - Move the player character in the specified direction (north, south, east, west)");
-
-            // turn
             println!("turn <direction> - Turn the player character in the specified direction (left, right)");
-            println!("forward - Move the player character forward in the direction they are facing");
-            println!("backward - Move the player character backward in the opposite direction they are facing");
+            println!("forward (fd) - Move the player character forward in the direction they are facing");
+            println!("backward (bd) - Move the player character backward in the opposite direction they are facing");
+
+            // look around
+            println!("look around - Look around to see items, and others nearby");
 
 
-            println!("teleport <x> <y> - Teleport the player character to the specified position");
-            println!("add <item> - Add an item to the player character's bag (apple, banana, orange)");
-            println!("list characters - List all characters in the character manager");
-            println!("list items - List all items in the player character's bag");
+            // topic items
+            println!("Items");
+            println!("get <item> - Add an item found *here* to your bag (apple, banana, orange, shovel etc..)");
+
+            println!("list items - List all items in the bag");
             println!("show item - Show the first item in the player character's bag");
+
+
             println!("show character - Show the player character's details");
             println!("show map - Show the map with the player character's position");
 
-            // display
+            println!("God like powers:");
             println!("display <x> <y> - Display items at the specified position");
+            println!("list characters - List all characters in the character manager");
+            println!("teleport <x> <y> - Teleport the player character to the specified position");
 
 
+            println!("System commands:");
             println!("quit - Quit the program");
             println!("help - Show available commands");
         }
@@ -2144,6 +2193,7 @@ fn execute_command(command: Command, manager: &mut CharacterManager, grid: &mut 
                 }
             }
         }
+        // looks around the neighboring tiles for items
         Command::LookAround => {
             // say "taking a look around"
             println!("Taking a look around ...");
@@ -2168,7 +2218,7 @@ fn execute_command(command: Command, manager: &mut CharacterManager, grid: &mut 
                             (-1, 1) => "southwest",
                             (-1, 0) => "west",
                             (-1, -1) => "northwest",
-                            (0, 0) => "here", // should not happen
+                            (0, 0) => "here", // player position
                             _ => "unknown",
                         };
                         println!("Direction of item: {}", direction);
@@ -2222,11 +2272,9 @@ fn execute_command(command: Command, manager: &mut CharacterManager, grid: &mut 
                 // remove named item from map
                 let item_name = item.get_item().get_name().clone();
                 items.remove_named_item_at(player.x_position, player.y_position, &item_name);
-
             } else {
                 println!("Item not found at position: ({}, {})", player.x_position, player.y_position);
             }
-
         }
     }
 }
@@ -2241,6 +2289,10 @@ fn command_loop(manager: &mut CharacterManager, grid: &mut Grid, items: &mut Map
         // handle multiple commands separated by semicolon
         let commands: Vec<&str> = input.trim().split(";").collect();
         for command in commands {
+            // check if the command is empty
+            if command.trim().is_empty() {
+                continue;
+            }
             let command = parse_command(command);
             execute_command(command, manager, grid, items);
         }
@@ -2283,14 +2335,15 @@ fn main() {
                                                  5,
                                                  5);
     manager.add_character(troll.character);
+    items.add_random_food_items(10000, &mut grid);
+    items.add_random_useful_items(1000);
 
 
     grid.generate_island(17);
+
     grid.set_boundary_margin(5);
     grid.generate_elevation_png("elevation.png");
 
-    items.add_random_food_items(38000);
-    items.add_random_useful_items(1000);
 
     // start the command loop
     // display "ready"
