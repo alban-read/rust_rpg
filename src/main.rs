@@ -11,6 +11,7 @@ use lazy_static::lazy_static;
 use once_cell::sync::Lazy;
 use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard};
+use std::thread;
 use imageproc::point::Point;
 use imageproc::rect::Rect;
 use noise::{NoiseFn, Perlin, Seedable};
@@ -220,11 +221,8 @@ pub trait ItemTrait: Sync + Send {
     fn clone_box(&self) -> Box<dyn ItemTrait>;
 }
 
-impl Clone for Box<dyn ItemTrait> {
-    fn clone(&self) -> Box<dyn ItemTrait> {
-        self.clone_box()
-    }
-}
+
+
 
 
 impl ItemTrait for FoodItem {
@@ -246,6 +244,12 @@ impl ItemTrait for FoodItem {
 
     fn clone_box(&self) -> Box<dyn ItemTrait> {
         Box::new(self.clone())
+    }
+}
+
+impl Clone for Box<dyn ItemTrait> {
+    fn clone(&self) -> Box<dyn ItemTrait> {
+        self.clone_box()
     }
 }
 
@@ -285,7 +289,7 @@ impl std::fmt::Debug for dyn ItemTrait {
 
 // a bag can hold items, a character has a bag.
 // derive debug for bag
-#[derive(Debug)]
+#[derive(Debug,Clone)]
 pub struct Bag {
     items: Vec<Box<dyn ItemTrait>>,
     size: u32,
@@ -420,10 +424,21 @@ fn get_random_useful_item(rng: &mut ThreadRng) -> &Box<dyn ItemTrait> {
 
 
 // MapItem struct used to store items on the map
+
 pub struct MapItem {
     item: Box<dyn ItemTrait>,
     x: usize,
     y: usize,
+}
+
+impl Clone for MapItem {
+    fn clone(&self) -> Self {
+        MapItem {
+            item: self.item.clone_box(),
+            x: self.x,
+            y: self.y,
+        }
+    }
 }
 
 // MapItem implementation
@@ -454,6 +469,28 @@ impl MapItem {
 pub struct MapItemGrid {
     items: Vec<Vec<Option<MapItem>>>,
 }
+
+// implement clone
+impl Clone for MapItemGrid {
+    fn clone(&self) -> Self {
+        let mut new_items = Vec::new();
+        for row in &self.items {
+            let mut new_row = Vec::new();
+            for item in row {
+                if let Some(map_item) = item {
+                    new_row.push(Some(map_item.clone()));
+                } else {
+                    new_row.push(None);
+                }
+            }
+            new_items.push(new_row);
+        }
+        MapItemGrid {
+            items: new_items,
+        }
+    }
+}
+
 
 // MapItemGrid implementation
 impl MapItemGrid {
@@ -508,26 +545,35 @@ impl MapItemGrid {
                 // create a new MapItem with the chosen food item and add it to the map
                 let map_item = MapItem::new(food_item.clone(), x, y);
                 self.add_item(map_item);
-                // println!("Added food item: {} at position: ({}, {})", food_item.get_name(), x, y);
+                // print tile type
+                //println!("Tile type: {:?}", grid.get_tile(x, y).get_tile_type_text());
+
+                //println!("Added food item: {} at position: ({}, {})", food_item.get_name(), x, y);
             }
         }
     }
 
     // add random useful items to the map
-    pub fn add_random_useful_items(&mut self, num_items: usize) {
+    pub fn add_random_useful_items(&mut self, num_items: usize, grid: &mut MutexGuard<Grid>) {
         let size = 2048; // map size
         let mut rng = rand::thread_rng();
         for _ in 0..num_items {
             // choose a random map position
             let x = rng.gen_range(0..size);
             let y = rng.gen_range(0..size);
-            let useful_item = get_random_useful_item(&mut rng);
-            // create a new MapItem with the chosen useful item and add it to the map
-            let map_item = MapItem::new(useful_item.clone(), x, y);
-            self.add_item(map_item);
-            // println!("Added useful item: {} at position: ({}, {})", useful_item.get_name(), x, y);
+            // check if the tile at x,y is not water
+            if grid.get_tile(x, y).is_not_water() {
+                let useful_item = get_random_useful_item(&mut rng);
+                // create a new MapItem with the chosen useful item and add it to the map
+                let map_item = MapItem::new(useful_item.clone(), x, y);
+                self.add_item(map_item);
+                // print tile type
+                //println!("Tile type: {:?}", grid.get_tile(x, y).get_tile_type_text());
+               // println!("Added useful item: {} at position: ({}, {})", useful_item.get_name(), x, y);
+            }
         }
     }
+
 
 
     // get items at x,y location
@@ -832,6 +878,8 @@ pub enum TileType {
 
 pub trait TileTrait {
     fn new(tile_type: TileType) -> Self;
+    // get tile type as text
+    fn get_tile_type_text(&self) -> String;
     // add accessors for contents, is_safe_zone, is_spawn_point, and elevation
     fn is_safe_zone(&self) -> bool;
     fn is_spawn_point(&self) -> bool;
@@ -849,6 +897,7 @@ pub trait EarthTileTrait {
 }
 
 
+#[derive(Clone)]
 pub struct Tile {
     tile_type: TileType,
     contents: Vec<String>,
@@ -873,6 +922,18 @@ impl TileTrait for Tile {
         }
     }
 
+    // get tile type as text
+    fn get_tile_type_text(&self) -> String {
+        match self.tile_type {
+            TileType::Boundary => "Boundary",
+            TileType::Mountain => "Mountain",
+            TileType::Forest => "Forest",
+            TileType::Earth => "Earth",
+            TileType::Beach => "Beach",
+            TileType::Water => "Water",
+            TileType::River => "River",
+        }.to_string()
+    }
 
     // add accessors for contents, is_safe_zone, is_spawn_point, and elevation
     fn is_safe_zone(&self) -> bool {
@@ -925,6 +986,8 @@ impl EarthTileTrait for Tile {
     // Implement more Earth-specific functions as needed
 }
 
+
+#[derive(Clone)]
 pub struct Grid {
     tiles: Vec<Vec<Tile>>,
     image_buffer_bg: Arc<Mutex<Option<ImageBuffer<Rgb<u8>, Vec<u8>>>>>,
@@ -1263,9 +1326,14 @@ impl Grid {
         for x in 0..food_items.items.len() {
             for y in 0..food_items.items[x].len() {
                 if let Some(item) = &food_items.items[x][y] {
-                    // let (x, y) = item.get_position();
-                    img.put_pixel(x as u32, y as u32, food_color);
-                    println!("Drawing food item: {} at position: ({}, {})", item.get_item().get_name(), x, y);
+                    let (x, y) = item.get_position();
+                    // if tile type is not water
+                    if self.get_tile(x, y).is_not_water() {
+                        img.put_pixel(x as u32, y as u32, food_color);
+                        println!("Drawing food item: {} at position: ({}, {})", item.get_item().get_name(), x, y);
+                        // display tile type
+                        println!("Tile type: {:?}", self.get_tile(x, y).get_tile_type_text());
+                    }
                 }
             }
         }
@@ -1478,7 +1546,7 @@ mod tile_tests {
 // =================================================================================================
 // Characters
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum CharacterType {
     Human,
     Elf,
@@ -1489,7 +1557,7 @@ pub enum CharacterType {
     // Add more character types as needed
 }
 
-#[derive(Debug)]
+#[derive(Debug,Clone)]
 pub struct Character {
     name: String,
     character_type: CharacterType,
@@ -2124,10 +2192,13 @@ fn execute_command(command: Command, manager: &mut CharacterManager, grid: &mut 
         }
         Command::ShowMap => {
             println!("generating map ...");
-            grid.clear_image_fg();
-            grid.draw_food_items(&items);
-            grid.do_draw_circle(player.x_position as i32, player.y_position as i32);
-            grid.save_image_fg("map.png");
+            println!("Generating map ...");
+            let mut cloned_grid = grid.clone();
+            let mut cloned_items = items.clone();
+            let mut cloned_player = player.clone();
+            thread::spawn(move || {
+                command_show_map(&mut cloned_grid, &mut cloned_items, &mut cloned_player);
+            });
         }
         Command::Quit => {
             println!("Goodbye!");
@@ -2279,6 +2350,15 @@ fn execute_command(command: Command, manager: &mut CharacterManager, grid: &mut 
     }
 }
 
+fn command_show_map(grid: &mut Grid, items: &mut MapItemGrid, mut player: &mut Character) {
+    grid.clear_image_fg();
+    grid.draw_food_items(&items);
+    grid.do_draw_circle(player.x_position as i32, player.y_position as i32);
+    grid.save_image_fg("map.png");
+    // tell user we have generated the map.
+    println!("Map generated. Check the map.png file for the map.");
+}
+
 // command loop
 fn command_loop(manager: &mut CharacterManager, grid: &mut Grid, items: &mut MapItemGrid) {
     println!("Enter command: ");
@@ -2336,7 +2416,7 @@ fn main() {
                                                  5);
     manager.add_character(troll.character);
     items.add_random_food_items(10000, &mut grid);
-    items.add_random_useful_items(1000);
+    items.add_random_useful_items(1000, &mut grid);
 
 
     grid.generate_island(17);
