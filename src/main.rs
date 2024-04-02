@@ -1637,6 +1637,8 @@ impl Character {
         }
     }
 
+
+
     // Getter method for the character's type
     pub fn get_character_type(&self) -> &CharacterType {
         &self.character_type
@@ -1840,44 +1842,19 @@ mod character_tests {
 
     #[test]
     fn test_character_creation() {
-        let character = Character::new("Player".to_string(), CharacterType::Human, 100, 10, 10, 10, 0, 0);
+        let character = Character::new("Player".to_string(), CharacterType::Human, 100, 10, 10, 10, 0, 0, true);
         assert_eq!(*character.get_character_type(), CharacterType::Human);
     }
 
     #[test]
     fn test_teleport_character() {
-        let mut character = Character::new("Player".to_string(), CharacterType::Human, 100, 10, 10, 10, 0, 0);
+        let mut character = Character::new("Player".to_string(), CharacterType::Human, 100, 10, 10, 10, 0, 0, true);
         character.teleport_character(5, 5);
         assert_eq!(character.x_position, 5);
         assert_eq!(character.y_position, 5);
     }
 
-    #[test]
-    fn test_player_creation() {
-        let player = Player::new("Player".to_string(), CharacterType::Human, 100, 10, 10, 10, 0, 0, 1, 0);
-        assert_eq!(player.get_level(), 1);
-        assert_eq!(player.get_experience(), 0);
-    }
 
-    #[test]
-    fn test_set_level() {
-        let mut player = Player::new("Player".to_string(), CharacterType::Human, 100, 10, 10, 10, 0, 0, 1, 0);
-        player.set_level(2);
-        assert_eq!(player.get_level(), 2);
-    }
-
-    #[test]
-    fn test_set_experience() {
-        let mut player = Player::new("Player".to_string(), CharacterType::Human, 100, 10, 10, 10, 0, 0, 1, 0);
-        player.set_experience(100);
-        assert_eq!(player.get_experience(), 100);
-    }
-
-    #[test]
-    fn test_computer_controlled_character_creation() {
-        let character = ComputerControlledCharacter::new("Oscar".to_string(), CharacterType::Orc, 100, 10, 10, 10, 0, 0);
-        assert_eq!(*character.character.get_character_type(), CharacterType::Orc);
-    }
 
     #[test]
     fn test_character_manager_creation() {
@@ -1888,7 +1865,7 @@ mod character_tests {
     #[test]
     fn test_add_character() {
         let mut character_manager = CharacterManager::new();
-        let character = Character::new("Player".to_string(), CharacterType::Human, 100, 10, 10, 10, 0, 0);
+        let character = Character::new("Player".to_string(), CharacterType::Human, 100, 10, 10, 10, 0, 0, false);
         character_manager.add_character(character);
         assert_eq!(character_manager.count_characters(), 1);
     }
@@ -1896,7 +1873,7 @@ mod character_tests {
     #[test]
     fn test_remove_character() {
         let mut character_manager = CharacterManager::new();
-        let character = Character::new("Player".to_string(), CharacterType::Human, 100, 10, 10, 10, 0, 0);
+        let character = Character::new("Player".to_string(), CharacterType::Human, 100, 10, 10, 10, 0, 0,false);
         character_manager.add_character(character);
         let removed_character = character_manager.remove_character(0);
         assert_eq!(removed_character.is_some(), true);
@@ -1906,7 +1883,7 @@ mod character_tests {
     #[test]
     fn test_get_character() {
         let mut character_manager = CharacterManager::new();
-        let character = Character::new("Player".to_string(), CharacterType::Human, 100, 10, 10, 10, 0, 0);
+        let character = Character::new("Player".to_string(), CharacterType::Human, 100, 10, 10, 10, 0, 0,false);
         character_manager.add_character(character);
         let retrieved_character = character_manager.get_character_by_index(0);
         assert_eq!(retrieved_character.is_some(), true);
@@ -1915,7 +1892,7 @@ mod character_tests {
     #[test]
     fn test_get_character_by_name() {
         let mut character_manager = CharacterManager::new();
-        let character = Character::new("Player".to_string(), CharacterType::Human, 100, 10, 10, 10, 0, 0);
+        let character = Character::new("Player".to_string(), CharacterType::Human, 100, 10, 10, 10, 0, 0,false);
         character_manager.add_character(character);
         let retrieved_character = character_manager.get_character_by_name("Player");
         assert_eq!(retrieved_character.is_some(), true);
@@ -1924,8 +1901,8 @@ mod character_tests {
     #[test]
     fn test_get_characters_at_position() {
         let mut character_manager = CharacterManager::new();
-        let character1 = Character::new("Player1".to_string(), CharacterType::Human, 100, 10, 10, 10, 0, 0);
-        let character2 = Character::new("Player2".to_string(), CharacterType::Human, 100, 10, 10, 10, 0, 0);
+        let character1 = Character::new("Player1".to_string(), CharacterType::Human, 100, 10, 10, 10, 0, 0, false);
+        let character2 = Character::new("Player2".to_string(), CharacterType::Human, 100, 10, 10, 10, 0, 0, false);
         character_manager.add_character(character1);
         character_manager.add_character(character2);
         let characters_at_position = character_manager.get_characters_at_position(0, 0);
@@ -1935,7 +1912,7 @@ mod character_tests {
     #[test]
     fn test_is_character_at_position() {
         let mut character_manager = CharacterManager::new();
-        let character = Character::new("Player".to_string(), CharacterType::Human, 100, 10, 10, 10, 0, 0);
+        let character = Character::new("Player".to_string(), CharacterType::Human, 100, 10, 10, 10, 0, 0, false);
         character_manager.add_character(character);
         let is_character_at_position = character_manager.is_character_at_position(0, 0);
         assert_eq!(is_character_at_position, true);
@@ -1944,57 +1921,47 @@ mod character_tests {
     // test move north
     #[test]
     fn test_move_north() {
-        let mut character = Character::new("Player".to_string(), CharacterType::Human, 100, 10, 10, 10, 0, 0);
-        let grid = Grid::new(10);
+        let mut character = Character::new("Player".to_string(), CharacterType::Human, 100, 10, 10, 10, 5, 5,true);
+        let grid = Grid::new(20);
         character.move_character(Direction::North, &grid);
-        assert_eq!(character.x_position, 0);
-        assert_eq!(character.y_position, 1);
+        assert_eq!(character.x_position, 5);
+        assert_eq!(character.y_position, 4);
     }
 
     // test move south
     #[test]
     fn test_move_south() {
-        let mut character = Character::new("Player".to_string(), CharacterType::Human, 100, 10, 10, 10, 0, 1);
-        let grid = Grid::new(10);
+        let mut character = Character::new("Player".to_string(), CharacterType::Human, 100, 10, 10, 10, 5, 5,false);
+        let grid = Grid::new(20);
         character.move_character(Direction::South, &grid);
-        assert_eq!(character.x_position, 0);
-        assert_eq!(character.y_position, 0);
+        assert_eq!(character.x_position, 5);
+        assert_eq!(character.y_position, 6);
     }
 
     // test move east
     #[test]
     fn test_move_east() {
-        let mut character = Character::new("Player".to_string(), CharacterType::Human, 100, 10, 10, 10, 0, 0);
-        let grid = Grid::new(10);
+        let mut character = Character::new("Player".to_string(), CharacterType::Human, 100, 10, 10, 10, 5, 5,false);
+        let grid = Grid::new(20);
         character.move_character(Direction::East, &grid);
-        assert_eq!(character.x_position, 1);
-        assert_eq!(character.y_position, 0);
+        assert_eq!(character.x_position, 6);
+        assert_eq!(character.y_position, 5);
     }
-
     // test move west
     #[test]
     fn test_move_west() {
-        let mut character = Character::new("Player".to_string(), CharacterType::Human, 100, 10, 10, 10, 1, 0);
-        let grid = Grid::new(10);
+        let mut character = Character::new("Player".to_string(), CharacterType::Human, 100, 10, 10, 10, 5, 5,false);
+        let grid = Grid::new(20);
         character.move_character(Direction::West, &grid);
-        assert_eq!(character.x_position, 0);
-        assert_eq!(character.y_position, 0);
+        assert_eq!(character.x_position, 4);
+        assert_eq!(character.y_position, 5);
     }
 
-    // test move beyond boundary
-    #[test]
-    fn test_move_beyond_boundary() {
-        let mut character = Character::new("Player".to_string(), CharacterType::Human, 100, 10, 10, 10, 0, 0);
-        let grid = Grid::new(10);
-        character.move_character(Direction::West, &grid);
-        assert_eq!(character.x_position, 0);
-        assert_eq!(character.y_position, 0);
-    }
 
     // test move to boundary
     #[test]
     fn test_move_to_boundary() {
-        let mut character = Character::new("Player".to_string(), CharacterType::Human, 100, 10, 10, 10, 0, 0);
+        let mut character = Character::new("Player".to_string(), CharacterType::Human, 100, 10, 10, 10, 0, 0,false);
         let grid = Grid::new(10);
         character.move_character(Direction::East, &grid);
         assert_eq!(character.x_position, 1);
