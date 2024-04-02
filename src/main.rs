@@ -802,6 +802,23 @@ impl Direction {
             _ => None,
         }
     }
+
+    // random direction
+    pub fn random_direction() -> Direction {
+        let mut rng = rand::thread_rng();
+        match rng.gen_range(0..8) {
+            0 => Direction::North,
+            1 => Direction::South,
+            2 => Direction::East,
+            3 => Direction::West,
+            4 => Direction::NorthEast,
+            5 => Direction::NorthWest,
+            6 => Direction::SouthEast,
+            _ => Direction::SouthWest,
+        }
+    }
+
+
 }
 
 // direction tests
@@ -1576,6 +1593,7 @@ mod tile_tests {
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum CharacterType {
+    Player,
     Human,
     Elf,
     Dwarf,
@@ -1598,10 +1616,11 @@ pub struct Character {
     x_position: usize,
     y_position: usize,
     my_bag: Bag,
+    is_player: bool,
 }
 
 impl Character {
-    pub fn new(name: String, character_type: CharacterType, health: u32, strength: u32, agility: u32, intelligence: u32, x_position: usize, y_position: usize) -> Self {
+    pub fn new(name: String, character_type: CharacterType, health: u32, strength: u32, agility: u32, intelligence: u32, x_position: usize, y_position: usize, isPlayer:bool) -> Self {
         Character {
             name,
             character_type,
@@ -1614,6 +1633,7 @@ impl Character {
             energy: 1000,
             my_bag: Bag::new(15),
             facing: Direction::North,
+            is_player: isPlayer,
         }
     }
 
@@ -1697,68 +1717,49 @@ impl Character {
     }
 
     pub fn automate(&mut self, grid: &Grid) {
-        // display the character's name
-        println!("1 automate Character: {}", self.name);
+        unless!(self.is_player, {
+            println!("Automate Character: {}", self.name);
+
+            // automate the character based on the character type
+            match self.character_type {
+                CharacterType::Human => {
+                    // move the character in a random direction
+                    let direction = Direction::random_direction();
+                    self.move_character(direction, grid);
+                }
+                CharacterType::Elf => {
+                    // move the character in a random direction
+                    let direction = Direction::random_direction();
+                    self.move_character(direction, grid);
+                }
+                CharacterType::Dwarf => {
+                    // move the character in a random direction
+                    let direction = Direction::random_direction();
+                    self.move_character(direction, grid);
+                }
+                CharacterType::Gnole => {
+                    // move the character in a random direction
+                    let direction = Direction::random_direction();
+                    self.move_character(direction, grid);
+                }
+                CharacterType::Orc => {
+                    // move the character in a random direction
+                    let direction = Direction::random_direction();
+                    self.move_character(direction, grid);
+                }
+                CharacterType::Troll => {
+                    // move the character in a random direction
+                    let direction = Direction::random_direction();
+                    self.move_character(direction, grid);
+                }
+                _ => {}
+            }
+        });
+
     }
     // end of Character struct
 }
 
-// a character can be a player or a computer controlled character
-pub struct Player {
-    character: Character,
-    level: u32,
-    experience: u32,
-}
-
-impl Player {
-    pub fn new(name: String, character_type: CharacterType, health: u32, strength: u32, agility: u32, intelligence: u32, x_position: usize, y_position: usize, level: u32, experience: u32) -> Self {
-        Player {
-            character: Character::new(name, character_type, health, strength, agility, intelligence, x_position, y_position),
-            level,
-            experience,
-        }
-    }
-
-    // Getter methods for the player's level and experience
-    pub fn get_level(&self) -> u32 {
-        self.level
-    }
-
-    pub fn get_experience(&self) -> u32 {
-        self.experience
-    }
-
-    // Setter methods for the player's level and experience
-    pub fn set_level(&mut self, level: u32) {
-        self.level = level;
-    }
-
-    pub fn set_experience(&mut self, experience: u32) {
-        self.experience = experience;
-    }
-
-    pub fn automate(&mut self, grid: &Grid) {}
-}
-
-pub struct ComputerControlledCharacter {
-    character: Character,
-}
-
-impl ComputerControlledCharacter {
-    pub fn new(name: String, character_type: CharacterType, health: u32, strength: u32, agility: u32, intelligence: u32, x_position: usize, y_position: usize) -> Self {
-        ComputerControlledCharacter {
-            character: Character::new(name, character_type, health, strength, agility, intelligence, x_position, y_position),
-        }
-    }
-
-    pub fn automate(&mut self, grid: &Grid) {
-        // move the NPC in a random direction
-        println!("CCC automate Character: {:?}", self.character.name);
-        let directions = vec![Direction::North, Direction::South, Direction::East, Direction::West];
-        let random_direction = directions.choose(&mut rand::thread_rng()).unwrap();
-        self.character.move_character(*random_direction, grid);
-    }
-}
 
 pub struct CharacterManager {
     characters: Vec<Character>,
@@ -1824,15 +1825,6 @@ impl CharacterManager {
         }
     }
 
-
-    // Add more methods to perform operations on the characters...
-
-    // convenience method to add a player to the character manager
-    pub fn add_player(&mut self, player: Player) {
-        self.add_character(player.character);
-    }
-
-
     // automate all the computer controlled characters in the character manager
     pub fn automate_all(&mut self, grid: &Grid) {
         for character in &mut self.characters {
@@ -1840,31 +1832,6 @@ impl CharacterManager {
             character.automate(grid);
         }
     }
-}
-
-pub struct NPC {
-    character: Character,
-
-}
-
-impl NPC {
-    pub fn new(name: String, character_type: CharacterType, health: u32, strength: u32, agility: u32, intelligence: u32, x_position: usize, y_position: usize, dialogue: String) -> Self {
-        NPC {
-            character: Character::new(name, character_type, health, strength, agility, intelligence, x_position, y_position),
-
-        }
-    }
-
-    // main function to automate the NPC
-    pub fn automate(&mut self, grid: &Grid) {
-        // move the NPC in a random direction
-        println!("NPC automate Character: {:?}", self.character.name);
-        let directions = vec![Direction::North, Direction::South, Direction::East, Direction::West];
-        let random_direction = directions.choose(&mut rand::thread_rng()).unwrap();
-        self.character.move_character(*random_direction, grid);
-    }
-
-    // automate all non-player characters in the character manager
 }
 
 #[cfg(test)]
@@ -2602,29 +2569,28 @@ fn main() {
     let mut grid = GRID.lock().unwrap();
     let mut items = MapItemGrid::new(2048);
     let mut manager = CharacterManager::new();
-    let player = Player::new("Kevin".to_string(),
-                             CharacterType::Human,
+    let player = Character::new("Kevin".to_string(),
+                             CharacterType::Player,
                              100,
                              10,
                              10,
                              10,
                              500,
-                             500,
-                             1,
-                             0);
+                             500, true);
 
-    manager.add_player(player);
+    manager.add_character(player);
 
     // add troll
-    let troll = ComputerControlledCharacter::new("Trevor".to_string(),
-                                                 CharacterType::Troll,
-                                                 200,
-                                                 20,
-                                                 5,
-                                                 5,
-                                                 5,
-                                                 5);
-    manager.add_character(troll.character);
+    let troll = Character::new("Troll".to_string(),
+                         CharacterType::Troll,
+                         100,
+                         10,
+                         10,
+                         10,
+                         1000,
+                         1000, false);
+
+    manager.add_character(troll);
     items.add_random_food_items(8000, &mut grid);
     items.add_random_useful_items(1000, &mut grid);
 
