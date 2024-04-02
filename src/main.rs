@@ -1146,7 +1146,7 @@ impl Grid {
     }
 
     pub fn generate_island(&mut self, seed: u32) {
-        let perlin = Perlin::new().set_seed(seed);
+        let perlin = Perlin::new(seed);
         let (width, height) = (self.tiles.len(), self.tiles[0].len());
         let (center_x, center_y) = (width / 2, height / 2);
 
@@ -1620,7 +1620,7 @@ pub struct Character {
 }
 
 impl Character {
-    pub fn new(name: String, character_type: CharacterType, health: u32, strength: u32, agility: u32, intelligence: u32, x_position: usize, y_position: usize, isPlayer:bool) -> Self {
+    pub fn new(name: String, character_type: CharacterType, health: u32, strength: u32, agility: u32, intelligence: u32, x_position: usize, y_position: usize, is_player:bool) -> Self {
         Character {
             name,
             character_type,
@@ -1633,7 +1633,7 @@ impl Character {
             energy: 1000,
             my_bag: Bag::new(15),
             facing: Direction::North,
-            is_player: isPlayer,
+            is_player,
         }
     }
 
