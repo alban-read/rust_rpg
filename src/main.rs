@@ -3,6 +3,10 @@ use std::cell::RefCell;
 use std::fmt::Debug;
 use std::io::Read;
 use std::any::Any;
+use std::sync::mpsc;
+use std::io::{self, BufRead};
+use std::time::Duration;
+use std::thread;
 use image::{ImageBuffer, Rgb};
 use imageproc::drawing::{draw_filled_circle, draw_filled_rect, draw_hollow_rect, draw_antialiased_line_segment, draw_polygon_mut, draw_filled_circle_mut, draw_cross};
 use imageproc::pixelops::interpolate;
@@ -11,7 +15,6 @@ use lazy_static::lazy_static;
 use once_cell::sync::Lazy;
 use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::thread;
 use imageproc::point::Point;
 use imageproc::rect::Rect;
 use noise::{NoiseFn, Perlin, Seedable};
@@ -33,6 +36,19 @@ macro_rules! dotimes {
         for _ in 0..$n $block
     };
 }
+
+// =================================================================================================
+// useful utils
+
+pub fn proper_name(name: String) -> String {
+    let binding = name.to_lowercase();
+    let mut chars = binding.chars();
+    match chars.next() {
+        None => String::new(),
+        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+    }
+}
+
 
 // predefined colours named Color_XXX
 pub const COLOR_RED: Rgb<u8> = Rgb([255, 0, 0]);
@@ -226,6 +242,8 @@ impl FoodItem {
     pub fn is_food(&self) -> bool {
         true
     }
+
+
 }
 
 pub trait ItemTrait: Sync + Send {
@@ -241,6 +259,8 @@ pub trait ItemTrait: Sync + Send {
     fn clone_box(&self) -> Box<dyn ItemTrait>;
 
     fn is_food(&self) -> bool;
+
+    fn get_energy(&self) -> u32;
 }
 
 
@@ -268,6 +288,12 @@ impl ItemTrait for FoodItem {
     fn is_food(&self) -> bool {
         true
     }
+
+    fn get_energy(&self) -> u32 {
+        self.nutritional_value
+    }
+
+
 }
 
 impl Clone for Box<dyn ItemTrait> {
@@ -305,6 +331,10 @@ impl ItemTrait for UsefulItem {
     fn is_food(&self) -> bool {
         false
     }
+
+    fn get_energy(&self) -> u32 {
+        0
+    }
 }
 
 impl std::fmt::Debug for dyn ItemTrait {
@@ -330,7 +360,7 @@ impl Bag {
         }
     }
 
-    pub fn add_item(&mut self, item: Box<dyn ItemTrait>) {
+    pub fn add_item(&mut self, item: Box<FoodItem>) {
         if self.items.len() < self.size as usize {
             self.items.push(item);
         }
@@ -368,6 +398,28 @@ impl Bag {
         let orange = Box::new(FoodItem::new("Orange".to_string(), 60));
         self.add_item(orange);
     }
+
+    // has_food true if there is food in the bag
+    pub fn has_food(&self) -> bool {
+        self.items.iter().any(|item| item.is_food())
+    }
+
+    // has_useful true if there is useful item in the bag
+    pub fn has_useful(&self) -> bool {
+        self.items.iter().any(|item| !item.is_food())
+    }
+
+    // remove and return the first food item in the bag
+    pub fn remove_first_food(&mut self) -> Option<Box<dyn ItemTrait>> {
+        let index = self.items.iter().position(|item| item.is_food());
+        if let Some(index) = index {
+            Some(self.items.remove(index))
+        } else {
+            None
+        }
+    }
+
+
 
     // Add more helper functions for other common food items...
 }
@@ -624,6 +676,20 @@ impl MapItemGrid {
         }
     }
 
+    // check if x,y location has items
+    pub fn has_items_at(&self, x: usize, y: usize) -> bool {
+        self.items[x][y].is_some()
+    }
+
+    // check if x,y location has food items
+    pub fn has_food_items_at(&self, x: usize, y: usize) -> bool {
+        if let Some(item) = &self.items[x][y] {
+            return item.get_item().is_food();
+        }
+        false
+    }
+
+
 
     // end of MapItemGrid struct
 }
@@ -732,6 +798,22 @@ impl Direction {
         }
     }
 
+    // return direction from x,y offset
+    pub fn from_offset(x: i32, y: i32) -> Option<Direction> {
+        match (x, y) {
+            (0, -1) => Some(Direction::North),
+            (0, 1) => Some(Direction::South),
+            (1, 0) => Some(Direction::East),
+            (-1, 0) => Some(Direction::West),
+            (1, -1) => Some(Direction::NorthEast),
+            (-1, -1) => Some(Direction::NorthWest),
+            (1, 1) => Some(Direction::SouthEast),
+            (-1, 1) => Some(Direction::SouthWest),
+            _ => None,
+        }
+    }
+
+
     // Human readable direction names
     pub fn name(&self) -> &str {
         match self {
@@ -803,6 +885,21 @@ impl Direction {
         }
     }
 
+    pub fn from_lower_case_str(s: &str) -> Option<Direction> {
+        match s {
+            "north" => Some(Direction::North),
+            "south" => Some(Direction::South),
+            "east" => Some(Direction::East),
+            "west" => Some(Direction::West),
+            "northeast" => Some(Direction::NorthEast),
+            "northwest" => Some(Direction::NorthWest),
+            "southeast" => Some(Direction::SouthEast),
+            "southwest" => Some(Direction::SouthWest),
+            _ => None,
+        }
+    }
+
+
     // random direction
     pub fn random_direction() -> Direction {
         let mut rng = rand::thread_rng();
@@ -817,14 +914,26 @@ impl Direction {
             _ => Direction::SouthWest,
         }
     }
-
-
 }
 
 // direction tests
 #[cfg(test)]
 mod direction_tests {
     use super::*;
+
+    // test from_offset
+    #[test]
+    fn test_direction_from_offset() {
+        assert_eq!(Direction::from_offset(0, -1), Some(Direction::North));
+        assert_eq!(Direction::from_offset(0, 1), Some(Direction::South));
+        assert_eq!(Direction::from_offset(1, 0), Some(Direction::East));
+        assert_eq!(Direction::from_offset(-1, 0), Some(Direction::West));
+        assert_eq!(Direction::from_offset(1, -1), Some(Direction::NorthEast));
+        assert_eq!(Direction::from_offset(-1, -1), Some(Direction::NorthWest));
+        assert_eq!(Direction::from_offset(1, 1), Some(Direction::SouthEast));
+        assert_eq!(Direction::from_offset(-1, 1), Some(Direction::SouthWest));
+        assert_eq!(Direction::from_offset(2, 2), None);
+    }
 
     // test direction get_offset
     #[test]
@@ -1620,9 +1729,9 @@ pub struct Character {
 }
 
 impl Character {
-    pub fn new(name: String, character_type: CharacterType, health: u32, strength: u32, agility: u32, intelligence: u32, x_position: usize, y_position: usize, is_player:bool) -> Self {
+    pub fn new(name: String, character_type: CharacterType, health: u32, strength: u32, agility: u32, intelligence: u32, x_position: usize, y_position: usize, is_player: bool) -> Self {
         Character {
-            name,
+            name: proper_name(name),
             character_type,
             health,
             strength,
@@ -1638,7 +1747,6 @@ impl Character {
     }
 
 
-
     // Getter method for the character's type
     pub fn get_character_type(&self) -> &CharacterType {
         &self.character_type
@@ -1648,43 +1756,48 @@ impl Character {
         &mut self.my_bag
     }
 
-    // move character in a Direction, North, South, East, West, using the direction offset
     pub fn move_character(&mut self, direction: Direction, grid: &Grid) {
+
         let (dx, dy) = direction.get_offset();
 
-        // check the lower bounds of the grid
-        // if self.x_position as i32 + dx < 0 || self.y_position as i32 + dy < 0 {
-        //     return;
-        // }
-        // // check the upper bounds of the grid
-        // if self.x_position + dx as usize >= grid.tiles.len() || self.y_position + dy as usize >= grid.tiles[0].len() {
-        //     return;
-        // }
-        //
-        // check if the next position tile is a boundary
-        if let TileType::Boundary = grid.tiles[(self.x_position as i32 + dx) as usize][(self.y_position as i32 + dy) as usize].tile_type {
-            // display boundary message
+        // Calculate the next position
+        let next_x = (self.x_position as i32 + dx) as usize;
+        let next_y = (self.y_position as i32 + dy) as usize;
+
+        // Check if the next position is a boundary
+        if let TileType::Boundary = grid.tiles[next_x][next_y].tile_type {
             println!("You cannot move beyond the boundary of this world");
             return;
         }
 
-        // reduce energy when moving - based on the cost of moving
-        let cost = grid.get_cost(self.x_position, self.y_position, (self.x_position as i32 + dx) as usize, (self.y_position as i32 + dy) as usize);
-        self.energy -= cost as u32;
+        // Calculate the cost of moving
+        let cost = grid.get_cost(self.x_position, self.y_position, next_x, next_y);
 
-        // display the energy level and cost of moving
-        println!("Energy: {}, Cost: {}", self.energy, cost);
-
-        // check if the character has enough energy to move
-        if self.energy <= 0 {
-            println!("You do not have enough energy to move");
-            return;
+        // Check if the character has enough energy to move
+        if self.energy < cost as u32 {
+            // Check if we have food in our bag
+            if let Some(food_item) = self.my_bag.remove_first_food() {
+                println!("{} has eaten {} to gain energy", self.name, food_item.get_name());
+                self.energy += food_item.get_nutritional_value();
+                println!("Energy: {}", self.energy);
+            } else {
+                println!("{} does not have enough energy to move", self.name);
+                println!("You will rest this turn");
+                self.energy += 20;
+                return;
+            }
         }
 
-        self.x_position = (self.x_position as i32 + dx) as usize;
-        self.y_position = (self.y_position as i32 + dy) as usize;
-    }
+        // Deduct the cost from the character's energy
+        self.energy -= cost as u32;
 
+        // Display the energy level and cost of moving
+        println!("Energy: {}, Cost: {}", self.energy, cost);
+
+        // Update the character's position
+        self.x_position = next_x;
+        self.y_position = next_y;
+    }
 
     // move forward in the direction we are facing
     pub fn move_forward(&mut self, grid: &Grid) {
@@ -1718,50 +1831,83 @@ impl Character {
         self.y_position = y;
     }
 
-    pub fn automate(&mut self, grid: &Grid) {
-        unless!(self.is_player, {
-            println!("Automate Character: {}", self.name);
+    pub fn automate(&mut self, grid: &Grid, items: &mut MapItemGrid) {
+        if self.is_player {
+            return;
+        }
 
-            // automate the character based on the character type
-            match self.character_type {
-                CharacterType::Human => {
-                    // move the character in a random direction
-                    let direction = Direction::random_direction();
-                    self.move_character(direction, grid);
-                }
-                CharacterType::Elf => {
-                    // move the character in a random direction
-                    let direction = Direction::random_direction();
-                    self.move_character(direction, grid);
-                }
-                CharacterType::Dwarf => {
-                    // move the character in a random direction
-                    let direction = Direction::random_direction();
-                    self.move_character(direction, grid);
-                }
-                CharacterType::Gnole => {
-                    // move the character in a random direction
-                    let direction = Direction::random_direction();
-                    self.move_character(direction, grid);
-                }
-                CharacterType::Orc => {
-                    // move the character in a random direction
-                    let direction = Direction::random_direction();
-                    self.move_character(direction, grid);
-                }
-                CharacterType::Troll => {
-                    // move the character in a random direction
-                    let direction = Direction::random_direction();
-                    self.move_character(direction, grid);
-                }
-                _ => {}
-            }
-        });
+
+        let valid_neighbors = self.get_valid_neighbors(grid);
+
+        if let Some(food_location) = self.find_food(&valid_neighbors, items) {
+            self.move_to_food(food_location, items);
+            self.move_forward_if_possible(grid);
+        } else {
+            self.move_forward_if_possible(grid);
+        }
+    }
+
+    fn get_valid_neighbors(&self, grid: &Grid) -> Vec<(usize, usize)> {
+        grid.get_neighbors(self.x_position, self.y_position)
+            .into_iter()
+            .filter(|(x, y)| grid.get_tile(*x, *y).is_not_water())
+            .collect()
+    }
+
+    fn find_food(&self, valid_neighbors: &[(usize, usize)], items: &MapItemGrid) -> Option<(usize, usize)> {
+        valid_neighbors.iter().find(|(x, y)| {
+            items.items[*x][*y].as_ref().map_or(false, |item| item.get_item().is_food())
+        }).copied()
+    }
+
+    fn move_to_food(&mut self, food_location: (usize, usize), items: &mut MapItemGrid) {
+        // display current position
+        println!("{} is at position: ({}, {})", self.name, self.x_position, self.y_position);
+        // display moving towards food location
+        println!("{} is moving towards food at position: ({}, {})", self.name, food_location.0, food_location.1);
+        let dx = food_location.0 as i32 - self.x_position as i32;
+        let dy = food_location.1 as i32 - self.y_position as i32;
+        // display direction we are facing
+        println!("{} is facing: {:?}", self.name, self.facing);
+        self.facing = Direction::from_offset(dx, dy).unwrap_or(self.facing);
+        // display direction we are facing after turning
+        println!("{} is facing: {:?}", self.name, self.facing);
+        // what is the distance between the character and the food
+        let distance = ((dx * dx + dy * dy) as f64).sqrt();
+        if(distance < 2.0) {
+            self.teleport_character(food_location.0, food_location.1);
+            self.pick_up_food(food_location, items);
+            return;
+        }
+        if dx == 0 && dy == 0 {
+            self.pick_up_food(food_location, items);
+        }
 
     }
-    // end of Character struct
-}
 
+    fn pick_up_food(&mut self, food_location: (usize, usize), items: &mut MapItemGrid) {
+        if let Some(map_item) = items.items[food_location.0][food_location.1].take() {
+            if let Some(food_item) = map_item.item.as_any().downcast_ref::<FoodItem>() {
+                self.my_bag.add_item(Box::new(food_item.clone()));
+                println!("{} has picked up a food item", self.name);
+                self.facing = if rand::random() { self.facing.turn_left() } else { self.facing.turn_right() };
+            }
+        }
+    }
+
+    fn move_forward_if_possible(&mut self, grid: &Grid) {
+        self.move_forward(grid);
+        if let TileType::Boundary | TileType::Water = grid.get_tile(self.x_position, self.y_position).tile_type {
+            self.move_away_from_obstacle();
+            self.move_forward(grid);
+        }
+    }
+
+    fn move_away_from_obstacle(&mut self) {
+        self.facing = self.facing.opposite();
+    }
+
+}
 
 pub struct CharacterManager {
     characters: Vec<Character>,
@@ -1828,10 +1974,10 @@ impl CharacterManager {
     }
 
     // automate all the computer controlled characters in the character manager
-    pub fn automate_all(&mut self, grid: &Grid) {
+    pub fn automate_all(&mut self, grid: &Grid, items: &mut MapItemGrid) {
         for character in &mut self.characters {
             // automate character depending on type
-            character.automate(grid);
+            character.automate(grid, items);
         }
     }
 }
@@ -1855,7 +2001,6 @@ mod character_tests {
     }
 
 
-
     #[test]
     fn test_character_manager_creation() {
         let character_manager = CharacterManager::new();
@@ -1873,7 +2018,7 @@ mod character_tests {
     #[test]
     fn test_remove_character() {
         let mut character_manager = CharacterManager::new();
-        let character = Character::new("Player".to_string(), CharacterType::Human, 100, 10, 10, 10, 0, 0,false);
+        let character = Character::new("Player".to_string(), CharacterType::Human, 100, 10, 10, 10, 0, 0, false);
         character_manager.add_character(character);
         let removed_character = character_manager.remove_character(0);
         assert_eq!(removed_character.is_some(), true);
@@ -1883,7 +2028,7 @@ mod character_tests {
     #[test]
     fn test_get_character() {
         let mut character_manager = CharacterManager::new();
-        let character = Character::new("Player".to_string(), CharacterType::Human, 100, 10, 10, 10, 0, 0,false);
+        let character = Character::new("Player".to_string(), CharacterType::Human, 100, 10, 10, 10, 0, 0, false);
         character_manager.add_character(character);
         let retrieved_character = character_manager.get_character_by_index(0);
         assert_eq!(retrieved_character.is_some(), true);
@@ -1892,7 +2037,7 @@ mod character_tests {
     #[test]
     fn test_get_character_by_name() {
         let mut character_manager = CharacterManager::new();
-        let character = Character::new("Player".to_string(), CharacterType::Human, 100, 10, 10, 10, 0, 0,false);
+        let character = Character::new("Player".to_string(), CharacterType::Human, 100, 10, 10, 10, 0, 0, false);
         character_manager.add_character(character);
         let retrieved_character = character_manager.get_character_by_name("Player");
         assert_eq!(retrieved_character.is_some(), true);
@@ -1921,7 +2066,7 @@ mod character_tests {
     // test move north
     #[test]
     fn test_move_north() {
-        let mut character = Character::new("Player".to_string(), CharacterType::Human, 100, 10, 10, 10, 5, 5,true);
+        let mut character = Character::new("Player".to_string(), CharacterType::Human, 100, 10, 10, 10, 5, 5, true);
         let grid = Grid::new(20);
         character.move_character(Direction::North, &grid);
         assert_eq!(character.x_position, 5);
@@ -1931,7 +2076,7 @@ mod character_tests {
     // test move south
     #[test]
     fn test_move_south() {
-        let mut character = Character::new("Player".to_string(), CharacterType::Human, 100, 10, 10, 10, 5, 5,false);
+        let mut character = Character::new("Player".to_string(), CharacterType::Human, 100, 10, 10, 10, 5, 5, false);
         let grid = Grid::new(20);
         character.move_character(Direction::South, &grid);
         assert_eq!(character.x_position, 5);
@@ -1941,16 +2086,17 @@ mod character_tests {
     // test move east
     #[test]
     fn test_move_east() {
-        let mut character = Character::new("Player".to_string(), CharacterType::Human, 100, 10, 10, 10, 5, 5,false);
+        let mut character = Character::new("Player".to_string(), CharacterType::Human, 100, 10, 10, 10, 5, 5, false);
         let grid = Grid::new(20);
         character.move_character(Direction::East, &grid);
         assert_eq!(character.x_position, 6);
         assert_eq!(character.y_position, 5);
     }
+
     // test move west
     #[test]
     fn test_move_west() {
-        let mut character = Character::new("Player".to_string(), CharacterType::Human, 100, 10, 10, 10, 5, 5,false);
+        let mut character = Character::new("Player".to_string(), CharacterType::Human, 100, 10, 10, 10, 5, 5, false);
         let grid = Grid::new(20);
         character.move_character(Direction::West, &grid);
         assert_eq!(character.x_position, 4);
@@ -1961,7 +2107,7 @@ mod character_tests {
     // test move to boundary
     #[test]
     fn test_move_to_boundary() {
-        let mut character = Character::new("Player".to_string(), CharacterType::Human, 100, 10, 10, 10, 0, 0,false);
+        let mut character = Character::new("Player".to_string(), CharacterType::Human, 100, 10, 10, 10, 0, 0, false);
         let grid = Grid::new(10);
         character.move_character(Direction::East, &grid);
         assert_eq!(character.x_position, 1);
@@ -1978,6 +2124,7 @@ mod character_tests {
 pub enum Command {
     Move(Direction),
     Run(Direction),
+    Rest,
     EatItemByName(String),
     GetItemByName(String),
     DisplayItemsAtXY(usize, usize),
@@ -2034,16 +2181,11 @@ fn parse_command(input: &str) -> Command {
             if parts.len() < 2 {
                 Command::Unknown
             } else {
-                match parts[1].to_lowercase().as_str() {
-                    "north" => Command::Move(Direction::North),
-                    "northeast" => Command::Move(Direction::NorthEast),
-                    "northwest" => Command::Move(Direction::NorthWest),
-                    "south" => Command::Move(Direction::South),
-                    "southeast" => Command::Move(Direction::SouthEast),
-                    "southwest" => Command::Move(Direction::SouthWest),
-                    "east" => Command::Move(Direction::East),
-                    "west" => Command::Move(Direction::West),
-                    _ => Command::Unknown,
+                if let Some(direction) =
+                    Direction::from_lower_case_str(parts[1].to_lowercase().as_str()) {
+                    Command::Move(direction)
+                } else {
+                    Command::Unknown
                 }
             }
         }
@@ -2051,16 +2193,11 @@ fn parse_command(input: &str) -> Command {
             if parts.len() < 2 {
                 Command::Unknown
             } else {
-                match parts[1].to_lowercase().as_str() {
-                    "north" => Command::Run(Direction::North),
-                    "northeast" => Command::Run(Direction::NorthEast),
-                    "northwest" => Command::Run(Direction::NorthWest),
-                    "south" => Command::Run(Direction::South),
-                    "southeast" => Command::Run(Direction::SouthEast),
-                    "southwest" => Command::Run(Direction::SouthWest),
-                    "east" => Command::Run(Direction::East),
-                    "west" => Command::Run(Direction::West),
-                    _ => Command::Unknown,
+                if let Some(direction) =
+                    Direction::from_lower_case_str(parts[1].to_lowercase().as_str()) {
+                    Command::Run(direction)
+                } else {
+                    Command::Unknown
                 }
             }
         }
@@ -2075,6 +2212,7 @@ fn parse_command(input: &str) -> Command {
                 }
             }
         }
+        "rest" => Command::Rest,
         "fd" => Command::MoveForward, // alias for "forward"
         "forward" => Command::MoveForward,
         "backward" => Command::MoveBackward,
@@ -2130,8 +2268,7 @@ fn parse_command(input: &str) -> Command {
                 match parts[1].to_lowercase().as_str() {
                     "bag" => Command::ListItems, // alias for "list items
                     "item" => Command::ShowItem,
-                    "character" => Command::ShowCharacter,
-                    "me" => Command::ShowCharacter, // alias for "show character"
+                    "me" | "character" => Command::ShowCharacter,
                     "map" => Command::ShowMap,
 
                     // assume the player wants to see the character named <name>
@@ -2172,66 +2309,53 @@ fn parse_command(input: &str) -> Command {
 
 
 // execute a command
-fn execute_command(command: Command, manager: &mut CharacterManager, grid: &mut Grid, items: &mut MapItemGrid) {
+fn execute_command(command: Command, manager: &mut CharacterManager, grid: &mut Grid, items: &mut MapItemGrid, character_index: usize) {
     match command {
         Command::Move(direction) => {
-            let mut player: &mut Character = manager.get_character_mut(0).unwrap();
-            player.move_character(direction, grid);
+            let mut character: &mut Character = manager.get_character_mut(character_index).unwrap();
+            character.move_character(direction, grid);
         }
         Command::Run(direction) => {
-            let mut player: &mut Character = manager.get_character_mut(0).unwrap();
+            let mut character: &mut Character = manager.get_character_mut(character_index).unwrap();
             dotimes!(4, {
-                player.move_character(direction, grid);
+                character.move_character(direction, grid);
             });
         }
         Command::Teleport(x, y) => {
-            let mut player: &mut Character = manager.get_character_mut(0).unwrap();
-            player.teleport_character(x, y);
+            let mut character: &mut Character = manager.get_character_mut(character_index).unwrap();
+            character.teleport_character(x, y);
         }
         Command::AddApple => {
-            let mut player: &mut Character = manager.get_character_mut(0).unwrap();
-            player.get_bag_mut().add_apple();
+            let mut character: &mut Character = manager.get_character_mut(character_index).unwrap();
+            character.get_bag_mut().add_apple();
         }
         Command::AddBanana => {
-            let mut player: &mut Character = manager.get_character_mut(0).unwrap();
-            player.get_bag_mut().add_banana();
+            let mut character: &mut Character = manager.get_character_mut(character_index).unwrap();
+            character.get_bag_mut().add_banana();
         }
         Command::AddOrange => {
-            let mut player: &mut Character = manager.get_character_mut(0).unwrap();
-            player.get_bag_mut().add_orange();
+            let mut character: &mut Character = manager.get_character_mut(character_index).unwrap();
+            character.get_bag_mut().add_orange();
         }
         Command::ListCharacters => {
             manager.list_characters();
         }
         Command::ListItems => {
-            // check if bag is empty
-            let mut player: &mut Character = manager.get_character_mut(0).unwrap();
-            if player.my_bag.items.is_empty() {
-                println!("No items found in the bag");
-            } else {
-                // display items in the player's bag
-                player.my_bag.items.iter().for_each(|item| item.show_item());
-            }
+            command_show_bag(manager, character_index);
         }
         Command::ShowItem => {
-            let mut player: &mut Character = manager.get_character_mut(0).unwrap();
-            if let Some(item) = player.my_bag.items.first() {
+            let mut character: &mut Character = manager.get_character_mut(character_index).unwrap();
+            if let Some(item) = character.my_bag.items.first() {
                 item.show_item();
             }
         }
         Command::ShowCharacter => {
-            let mut player: &mut Character = manager.get_character_mut(0).unwrap();
-            println!("{:?}", player);
+            let mut character: &mut Character = manager.get_character_mut(character_index).unwrap();
+            println!("{:?}", character);
         }
         Command::ShowMap => {
-            println!("generating map ...");
-            let mut player: &mut Character = manager.get_character_mut(0).unwrap();
-            let mut cloned_grid = grid.clone();
-            let mut cloned_items = items.clone();
-            let mut cloned_player = player.clone();
-            thread::spawn(move || {
-                command_show_map(&mut cloned_grid, &mut cloned_items, &mut cloned_player);
-            });
+            let mut character: &mut Character = manager.get_character_mut(character_index).unwrap();
+            command_show_map(grid, items, character);
         }
         Command::Quit => {
             println!("Goodbye!");
@@ -2244,54 +2368,77 @@ fn execute_command(command: Command, manager: &mut CharacterManager, grid: &mut 
             println!("Unknown command. Type 'help' to see available commands.");
         }
         Command::TurnLeft => {
-            let mut player: &mut Character = manager.get_character_mut(0).unwrap();
-            player.turn_left();
+            let mut character: &mut Character = manager.get_character_mut(character_index).unwrap();
+            character.turn_left();
         }
         Command::TurnRight => {
-            let mut player: &mut Character = manager.get_character_mut(0).unwrap();
-            player.turn_right();
+            let mut character: &mut Character = manager.get_character_mut(character_index).unwrap();
+            character.turn_right();
         }
         Command::MoveForward => {
-            let mut player: &mut Character = manager.get_character_mut(0).unwrap();
-            player.move_forward(grid);
+            let mut character: &mut Character = manager.get_character_mut(character_index).unwrap();
+            character.move_forward(grid);
         }
         Command::MoveBackward => {
-            let mut player: &mut Character = manager.get_character_mut(0).unwrap();
-            player.move_backward(grid);
+            let mut character: &mut Character = manager.get_character_mut(character_index).unwrap();
+            character.move_backward(grid);
         }
         Command::DisplayItemsAtXY(x, y) => {
-            let tile_items = items.get_items_at(x, y);
-            if tile_items.is_empty() {
-                println!("No items found at position: ({}, {})", x, y);
-            } else {
-                println!("Items found at position: ({}, {})", x, y);
-                for item in tile_items {
-                    println!("Item: {}", item.get_item().get_name());
-                }
-            }
+            command_display_items_at_xy(items, x, y);
         }
         // looks around the neighboring tiles for items
         Command::LookAround => {
-            let mut player: &mut Character = manager.get_character_mut(0).unwrap();
-            command_look_around(items, &mut player);
+            let mut character: &mut Character = manager.get_character_mut(character_index).unwrap();
+            command_look_around(items, &mut character);
         }
         Command::EatItemByName(item_name) => {
-            let mut player: &mut Character = manager.get_character_mut(0).unwrap();
-            command_eat_item_by_name(&mut player, item_name);
+            let mut character: &mut Character = manager.get_character_mut(character_index).unwrap();
+            command_eat_item_by_name(&mut character, item_name);
         }
 
         Command::GetItemByName(item_name) => {
-            let mut player: &mut Character = manager.get_character_mut(0).unwrap();
-            command_get_item_by_name(items, player, item_name);
+            let mut character: &mut Character = manager.get_character_mut(character_index).unwrap();
+            command_get_item_by_name(items, character, item_name);
         }
         Command::ShowNamedCharacter(item_name) => {
             command_show_some_thing_by_name(manager, items, &item_name);
         }
+        Command::Rest => {
+            // resting restores energy at the expense of time
+            let mut character: &mut Character = manager.get_character_mut(character_index).unwrap();
+            character.energy += 20;
+        }
     }
 }
+
+fn command_display_items_at_xy(items: &mut MapItemGrid, x: usize, y: usize) {
+    let tile_items = items.get_items_at(x, y);
+    if tile_items.is_empty() {
+        println!("No items found at position: ({}, {})", x, y);
+    } else {
+        println!("Items found at position: ({}, {})", x, y);
+        for item in tile_items {
+            println!("Item: {}", item.get_item().get_name());
+        }
+    }
+}
+
+
+fn command_show_bag(manager: &mut CharacterManager, character_index: usize) {
+// check if bag is empty
+    let mut player: &mut Character = manager.get_character_mut(character_index).unwrap();
+    if player.my_bag.items.is_empty() {
+        println!("No items found in the bag");
+    } else {
+        // display items in the player's bag
+        player.my_bag.items.iter().for_each(|item| item.show_item());
+    }
+}
+
 fn command_show_some_thing_by_name(manager: &mut CharacterManager, items: &mut MapItemGrid, item_name: &String) {
     // Try to find a character with the given name
-    if let Some(character) = manager.get_character_by_name(item_name) {
+    let item_name = proper_name(item_name.clone());
+    if let Some(character) = manager.get_character_by_name(item_name.as_str()) {
         println!("{:?}", character);
         return;
     }
@@ -2453,23 +2600,39 @@ fn command_show_map(grid: &mut Grid, items: &mut MapItemGrid, mut player: &mut C
 
 // command loop
 fn command_loop(manager: &mut CharacterManager, grid: &mut Grid, items: &mut MapItemGrid) {
-    println!("Enter command: ");
-    loop {
-        let mut input = String::new();
-        std::io::stdin().read_line(&mut input).unwrap();
-
-        // handle multiple commands separated by semicolon
-        let commands: Vec<&str> = input.trim().split(";").collect();
-        for command in commands {
-            // check if the command is empty
-            if command.trim().is_empty() {
-                continue;
+    let (tx, rx) = mpsc::channel();
+    thread::spawn(move || {
+        loop {
+            let mut input = String::new();
+            match io::stdin().read_line(&mut input) {
+                Ok(_) => {
+                    match tx.send(input) {
+                        Ok(_) => (),
+                        Err(e) => println!("Failed to send input: {}", e),
+                    }
+                }
+                Err(e) => println!("Failed to read line: {}", e),
             }
-            let command = parse_command(command);
-            execute_command(command, manager, grid, items);
         }
-        manager.automate_all(grid);
-        println!("Enter command: ");
+    });
+
+    loop {
+        match rx.recv_timeout(Duration::from_secs(30)) {
+            Ok(input) => {
+                let commands: Vec<&str> = input.trim().split(";").collect();
+                for command in commands {
+                    if command.trim().is_empty() {
+                        manager.automate_all(grid, items);
+                        continue;
+                    }
+                    let command = parse_command(command);
+                    execute_command(command, manager, grid, items, 0);
+                }
+                manager.automate_all(grid, items);
+                println!("Enter command: ");
+            }
+            Err(_) => { manager.automate_all(grid, items); }
+        }
     }
 }
 
@@ -2521,7 +2684,6 @@ mod command_tests {
         let command = parse_command("get an apple");
         assert_eq!(command, Command::GetItemByName("apple".to_string()));
     }
-
 }
 
 
@@ -2536,26 +2698,27 @@ fn main() {
     let mut grid = GRID.lock().unwrap();
     let mut items = MapItemGrid::new(2048);
     let mut manager = CharacterManager::new();
+
     let player = Character::new("Kevin".to_string(),
-                             CharacterType::Player,
-                             100,
-                             10,
-                             10,
-                             10,
-                             500,
-                             500, true);
+                                CharacterType::Player,
+                                100,
+                                10,
+                                10,
+                                10,
+                                500,
+                                500, true);
 
     manager.add_character(player);
 
     // add troll
     let troll = Character::new("Troll".to_string(),
-                         CharacterType::Troll,
-                         100,
-                         10,
-                         10,
-                         10,
-                         1000,
-                         1000, false);
+                               CharacterType::Troll,
+                               100,
+                               10,
+                               10,
+                               10,
+                               1000,
+                               1000, false);
 
     manager.add_character(troll);
     items.add_random_food_items(8000, &mut grid);
