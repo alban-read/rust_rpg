@@ -1520,6 +1520,7 @@ impl Grid {
     }
 
 
+
     pub fn do_draw_circle(&self, x: i32, y: i32) {
 
         // Lock the image buffer and clone it
@@ -1550,6 +1551,78 @@ impl Grid {
         *self.image_buffer_fg.lock().unwrap() = Some(img);
     }
 
+
+
+
+    fn generate_v_shape_offsets(length: i32, direction: Direction) -> Vec<(i32, i32)> {
+        let mut offsets = Vec::new();
+
+        // Generate offsets for the first line
+        for i in 0..length {
+            offsets.push((-i, i));
+        }
+
+        // Generate offsets for the second line
+        for i in 1..length { // Start from 1 to avoid duplicating the center point
+            offsets.push((i, i));
+        }
+
+        // Rotate offsets based on the direction
+        for offset in &mut offsets {
+            let (dx, dy) = match direction {
+                Direction::North => (offset.0, -offset.1),
+                Direction::South => (offset.0, offset.1),
+                Direction::East => (offset.1, offset.0),
+                Direction::West => (-offset.1, offset.0),
+                Direction::NorthEast => (offset.1, -offset.0),
+                Direction::NorthWest => (-offset.1, -offset.0),
+                Direction::SouthEast => (offset.1, offset.0),
+                Direction::SouthWest => (-offset.1, offset.0),
+            };
+            *offset = (dx, dy);
+        }
+
+        offsets
+    }
+
+
+    pub fn do_draw_v_shape(&self, x: i32, y: i32, direction: Direction, c: Rgb<u8>) {
+        let length = 5;
+        let offsets = Grid::generate_v_shape_offsets(length, direction);
+
+        // Lock the image buffer and clone it
+        let mut img = match self.clone_and_lock_fg() {
+            Some(value) => value,
+            None => {
+                debug_println!("Warning: The image buffer is None");
+                return;
+            }
+        };
+
+        let v_shape_color = c;
+        let (width, height) = img.dimensions();
+        for (dx, dy) in offsets {
+            let nx = x + dx;
+            let ny = y + dy;
+            if nx >= 0 && nx < width as i32 && ny >= 0 && ny < height as i32 {
+                img.put_pixel(x as u32, y as u32, c);
+                if x > 0 {
+                    img.put_pixel((x - 1) as u32, y as u32, c);
+                }
+                if x < img.width() as i32 - 1 {
+                    img.put_pixel((x + 1) as u32, y as u32, c);
+                }
+                if y > 0 {
+                    img.put_pixel(x as u32, (y - 1) as u32, c);
+                }
+                if y < img.height() as i32 - 1 {
+                    img.put_pixel(x as u32, (y + 1) as u32, c);
+                }
+            }
+        }
+
+        *self.image_buffer_fg.lock().unwrap() = Some(img);
+    }
 
     // save fg image buffer to a png file
     pub fn save_image_fg(&self, filename: &str) {
