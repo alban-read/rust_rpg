@@ -37,6 +37,15 @@ macro_rules! dotimes {
     };
 }
 
+#[macro_export]
+macro_rules! debug_println {
+    ($($arg:tt)*) => {
+        #[cfg(debug_assertions)]
+        println!($($arg)*);
+    }
+}
+
+
 // =================================================================================================
 // useful utils
 
@@ -353,6 +362,7 @@ pub struct Bag {
 }
 
 impl Bag {
+
     pub fn new(capacity: u32) -> Self {
         Bag {
             items: Vec::new(),
@@ -419,6 +429,20 @@ impl Bag {
         }
     }
 
+    // remove least-nutritional value food item
+    pub fn remove_least_nutritious_food(&mut self) -> Option<Box<dyn ItemTrait>> {
+        let index = self.items.iter().enumerate().min_by_key(|(_, item)| item.get_nutritional_value());
+        if let Some((index, _)) = index {
+            Some(self.items.remove(index))
+        } else {
+            None
+        }
+    }
+
+    // is the bag full, it has len >= capacity
+    pub fn is_full(&self) -> bool {
+        self.items.len() >= self.size as usize
+    }
 
 
     // Add more helper functions for other common food items...
@@ -1448,7 +1472,7 @@ impl Grid {
         let mut img = match self.clone_and_lock_fg() {
             Some(value) => value,
             None => {
-                println!("Warning: The image buffer is None");
+                debug_println!("Warning: The image buffer is None");
                 return;
             }
         };
@@ -1456,9 +1480,9 @@ impl Grid {
         let (width, height) = img.dimensions();
         // Check if the circle is within the image dimensions
         if (center.0 + radius > width as i32) || (center.1 + radius > height as i32) {
-            println!("Warning: The circle is outside the image dimensions");
-            println!("Image dimensions: {} x {}", width, height);
-            println!("Circle center: {:?}, radius: {}, color: {:?}", center, radius, color);
+            debug_println!("Warning: The circle is outside the image dimensions");
+            debug_println!("Image dimensions: {} x {}", width, height);
+            debug_println!("Circle center: {:?}, radius: {}, color: {:?}", center, radius, color);
             return;
         }
 
@@ -1471,7 +1495,7 @@ impl Grid {
         let mut img = match self.clone_and_lock_fg() {
             Some(value) => value,
             None => {
-                println!("Warning: The image buffer is None");
+                debug_println!("Warning: The image buffer is None");
                 return;
             }
         };
@@ -1502,7 +1526,7 @@ impl Grid {
         let mut img = match self.clone_and_lock_fg() {
             Some(value) => value,
             None => {
-                println!("Warning: The image buffer is None");
+                debug_println!("Warning: The image buffer is None");
                 return;
             }
         };
@@ -1512,16 +1536,16 @@ impl Grid {
         let radius = 5;
         // Check if the circle is within the image dimensions
         if (center.0 + radius > width as i32) || (center.1 + radius > height as i32) {
-            println!("Warning: The circle is outside the image dimensions");
-            println!("Image dimensions: {} x {}", width, height);
-            println!("Circle center: {:?}, radius: {}, color: {:?}", center, radius, circle_color);
+            debug_println!("Warning: The circle is outside the image dimensions");
+            debug_println!("Image dimensions: {} x {}", width, height);
+            debug_println!("Circle center: {:?}, radius: {}, color: {:?}", center, radius, circle_color);
             return;
         }
 
         draw_filled_circle_mut(&mut img, center, radius, circle_color);
 
         let cross_color = COLOR_CYAN;
-        draw_cross(&mut img, cross_color, x, y);
+        let _ = draw_cross(&mut img, cross_color, x, y);
 
         *self.image_buffer_fg.lock().unwrap() = Some(img);
     }
@@ -1533,7 +1557,7 @@ impl Grid {
         let mut img = match self.clone_and_lock_fg() {
             Some(value) => value,
             None => {
-                println!("Warning: The image buffer is None");
+                debug_println!("Warning: The image buffer is None");
                 return;
             }
         };
@@ -1767,6 +1791,14 @@ impl Character {
         // Check if the next position is a boundary
         if let TileType::Boundary = grid.tiles[next_x][next_y].tile_type {
             println!("You cannot move beyond the boundary of this world");
+            // turn the character in the opposite direction
+            self.facing = direction.opposite();
+            // randomly choose to turn left or right
+            if rand::random() {
+                self.turn_left();
+            } else {
+                self.turn_right();
+            }
             return;
         }
 
@@ -1779,9 +1811,9 @@ impl Character {
             if let Some(food_item) = self.my_bag.remove_first_food() {
                 println!("{} has eaten {} to gain energy", self.name, food_item.get_name());
                 self.energy += food_item.get_nutritional_value();
-                println!("Energy: {}", self.energy);
+                debug_println!("Energy: {}", self.energy);
             } else {
-                println!("{} does not have enough energy to move", self.name);
+                println!("{} does not have enough energy to move.", self.name);
                 println!("You will rest this turn");
                 self.energy += 20;
                 return;
@@ -1792,7 +1824,7 @@ impl Character {
         self.energy -= cost as u32;
 
         // Display the energy level and cost of moving
-        println!("Energy: {}, Cost: {}", self.energy, cost);
+        debug_println!("Energy: {}, Cost: {}", self.energy, cost);
 
         // Update the character's position
         self.x_position = next_x;
@@ -1862,16 +1894,16 @@ impl Character {
 
     fn move_to_food(&mut self, food_location: (usize, usize), items: &mut MapItemGrid) {
         // display current position
-        println!("{} is at position: ({}, {})", self.name, self.x_position, self.y_position);
+        debug_println!("{} is at position: ({}, {})", self.name, self.x_position, self.y_position);
         // display moving towards food location
-        println!("{} is moving towards food at position: ({}, {})", self.name, food_location.0, food_location.1);
+        debug_println!("{} is moving towards food at position: ({}, {})", self.name, food_location.0, food_location.1);
         let dx = food_location.0 as i32 - self.x_position as i32;
         let dy = food_location.1 as i32 - self.y_position as i32;
         // display direction we are facing
-        println!("{} is facing: {:?}", self.name, self.facing);
+        debug_println!("{} is facing: {:?}", self.name, self.facing);
         self.facing = Direction::from_offset(dx, dy).unwrap_or(self.facing);
         // display direction we are facing after turning
-        println!("{} is facing: {:?}", self.name, self.facing);
+        debug_println!("{} is facing: {:?}", self.name, self.facing);
         // what is the distance between the character and the food
         let distance = ((dx * dx + dy * dy) as f64).sqrt();
         if(distance < 2.0) {
@@ -1890,6 +1922,14 @@ impl Character {
             if let Some(food_item) = map_item.item.as_any().downcast_ref::<FoodItem>() {
                 self.my_bag.add_item(Box::new(food_item.clone()));
                 println!("{} has picked up a food item", self.name);
+                if self.my_bag.is_full() {
+                    println!("{}'s bag is full", self.name);
+                    // find least nutritious food item and eat it
+                    if let Some(food_item) = self.my_bag.remove_least_nutritious_food() {
+                        println!("{} has eaten {} to make space in the bag", self.name, food_item.get_name());
+                    }
+                }
+
                 self.facing = if rand::random() { self.facing.turn_left() } else { self.facing.turn_right() };
             }
         }
@@ -2133,9 +2173,6 @@ pub enum Command {
     MoveForward,
     MoveBackward,
     Teleport(usize, usize),
-    AddApple,
-    AddBanana,
-    AddOrange,
     ListCharacters,
     ListItems,
     LookAround,
@@ -2153,9 +2190,7 @@ pub enum Command {
 fn parse_item_command(input: &str) -> Command {
     let parts: Vec<&str> = input.trim().split_whitespace().collect();
     match parts[0].to_lowercase().as_str() {
-        "apple" => Command::AddApple,
-        "banana" => Command::AddBanana,
-        "orange" => Command::AddOrange,
+
         _ => Command::Unknown,
     }
 }
@@ -2325,18 +2360,7 @@ fn execute_command(command: Command, manager: &mut CharacterManager, grid: &mut 
             let mut character: &mut Character = manager.get_character_mut(character_index).unwrap();
             character.teleport_character(x, y);
         }
-        Command::AddApple => {
-            let mut character: &mut Character = manager.get_character_mut(character_index).unwrap();
-            character.get_bag_mut().add_apple();
-        }
-        Command::AddBanana => {
-            let mut character: &mut Character = manager.get_character_mut(character_index).unwrap();
-            character.get_bag_mut().add_banana();
-        }
-        Command::AddOrange => {
-            let mut character: &mut Character = manager.get_character_mut(character_index).unwrap();
-            character.get_bag_mut().add_orange();
-        }
+
         Command::ListCharacters => {
             manager.list_characters();
         }
@@ -2617,7 +2641,7 @@ fn command_loop(manager: &mut CharacterManager, grid: &mut Grid, items: &mut Map
     });
 
     loop {
-        match rx.recv_timeout(Duration::from_secs(30)) {
+        match rx.recv_timeout(Duration::from_secs(10)) {
             Ok(input) => {
                 let commands: Vec<&str> = input.trim().split(";").collect();
                 for command in commands {
@@ -2721,7 +2745,7 @@ fn main() {
                                1000, false);
 
     manager.add_character(troll);
-    items.add_random_food_items(8000, &mut grid);
+    items.add_random_food_items(28000, &mut grid);
     items.add_random_useful_items(1000, &mut grid);
 
 
