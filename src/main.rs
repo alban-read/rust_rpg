@@ -15,17 +15,21 @@ use std::mem::needs_drop;
 // - Randomly generated characters with different attributes
 // - A simple command based user interface to interact with the game
 
-// This version of the game will be designed using a functional programming approach, where the game state is immutable and changes are made by creating new instances of objects with updated attributes.
-// Designing a game in a more functional way in Rust can be challenging due to the language's strict borrowing and mutability rules. However, it's not impossible. Here are some suggestions:
+// This version of the game will be designed using a more functional programming approach, where the game state is immutable and changes are made by creating new instances of objects with updated attributes.
+// Designing a game in a more functional way in Rust can be challenging due to the language's strict borrowing and mutability rules.
 // Immutable Data: In functional programming, data is immutable. This means that instead of changing the state of an object, you create a new object with the updated state. This can be achieved in Rust using the clone method to create new instances of objects with modified attributes.
 // Advanced Types: Rust has several advanced types that can be used to design your game in a more functional way. For example, Option and Result can be used for error handling instead of using exceptions. Enum can be used to create different types of game objects. Trait can be used to define common behavior for these objects.
-// Use of Iterators: Iterators in Rust are lazy, meaning they have no effect until you consume them. They are a central feature of idiomatic, functional Rust code. You can use methods like map, filter, and fold to perform operations on game objects
+// Use of Iterators: Iterators in Rust are lazy, meaning they have no effect until you consume them.
+// They are a central feature of idiomatic, functional Rust code.
+// Use methods like map, filter, and fold to perform operations on game objects
 
 // implement the commands
 pub enum Command {
     Test,
     Idle,
     Quit,
+    MeLook,
+    Look(String),
     MoveTo(i32, i32),
     Attack,
     Defend,
@@ -46,6 +50,7 @@ pub struct Tile {
     terrain_type: TerrainType,
     x_position: i32,
     y_position: i32,
+    elevation: i32,
     // other tile properties...
 }
 
@@ -78,20 +83,42 @@ impl GameObject for GameMap {
 
 impl GameMap {
     pub fn new(width: i32, height: i32) -> Self {
-        let mut tiles = Vec::new();
+        fn calculate_elevation(x: i32, y: i32, width: i32, height: i32) -> i32 {
+            // Calculate the center of the map
+            let center_x = width / 2;
+            let center_y = height / 2;
 
+            // Calculate the distance of the tile from the center of the map
+            let dx = (x - center_x).abs();
+            let dy = (y - center_y).abs();
+
+            // Use the Pythagorean theorem to calculate the distance
+            let distance = ((dx * dx + dy * dy) as f64).sqrt();
+
+            // Calculate the maximum possible distance (from the center to a corner)
+            let max_distance = ((center_x * center_x + center_y * center_y) as f64).sqrt();
+
+            // Calculate the elevation based on the distance
+            let elevation = 75.0 * (1.0 - distance / max_distance);
+
+            // Return the elevation as an integer
+            elevation as i32
+        }
+
+        let mut tiles = Vec::new();
         for y in 0..height {
             let mut row = Vec::new();
             for x in 0..width {
-                let tile = Tile {
-                    terrain_type: TerrainType::Grass, // default terrain type
+                row.push(Tile {
+                    terrain_type: TerrainType::Grass,
                     x_position: x,
                     y_position: y,
-                };
-                row.push(tile);
+                    elevation: calculate_elevation(x, y, width, height),
+                });
             }
             tiles.push(row);
         }
+
 
         GameMap {
             tiles,
@@ -183,7 +210,15 @@ impl Character {
                 println!("{}'s bag: {:?}", self.name, self.bag);
                 (*self).clone()
             }
-            Command::See(_) => { (*self).clone() }
+            Command::See(_) => {
+                (*self).clone()
+            }
+            Command::MeLook => {
+                (*self).clone()
+            }
+            Command::Look(_) => {
+                (*self).clone()
+            }
         }
     }
 }
@@ -370,6 +405,13 @@ impl World {
                 return Command::See(parts[1].parse().unwrap());
             }
         }
+        // add the look <name> command
+        if command.trim().starts_with("look") {
+            let parts: Vec<&str> = command.trim().split_whitespace().collect();
+            if parts.len() == 2 {
+                return Command::Look(parts[1].parse().unwrap());
+            }
+        }
         return Command::Idle;
     }
 
@@ -427,6 +469,23 @@ impl World {
             Command::See(name) => {
                 // find and display the character by name
                 self.find_and_display_character(name);
+            }
+            // add command "look"
+            Command::Look(name) => {
+                let character = self.search_for_named_character(name);
+                if let Some(character) = character {
+                    // get the character's position
+                    let  x = character.x_position;
+                    let  y = character.y_position;
+                    println!("{:?}", self.game_map.tiles[x as usize][y as usize])
+                } else {
+                    println!("Character not found");
+                }
+            }
+            // add command "me look"
+            Command::MeLook => {
+                // look around the player
+                println!("Look around player");
             }
         }
         // After executing the command, update the world state
@@ -593,7 +652,6 @@ fn main() {
             y_position: 500,
         };
         world.add_item_to_characters_bag(item, "PlayerOne");
-
     }
     {
         let item = Item {
