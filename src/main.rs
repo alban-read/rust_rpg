@@ -30,7 +30,6 @@ use rand::Rng;
 // Use methods like map, filter, and fold to perform operations on game objects
 
 
-
 // ===========================================================================
 // Direction concepts
 
@@ -198,8 +197,6 @@ pub enum Command {
 }
 
 
-
-
 static PERLIN: Lazy<Perlin> = Lazy::new(|| {
     Perlin::new(7243)
 });
@@ -297,7 +294,7 @@ impl Tile {
 
 
         let mut calculate_biased_elevation = |x: f64, y: f64, neighbors: &[(f64, f64)], map_width: f64, map_height: f64| -> f64 {
-            let elevation=Self::calc_elevation(width, height, x, y, map_width, map_height);
+            let elevation = Self::calc_elevation(width, height, x, y, map_width, map_height);
             let mut sum_elevation = elevation;
             let mut count = 1.0;
             for (neighbor_x, neighbor_y) in neighbors {
@@ -306,8 +303,8 @@ impl Tile {
                 count += 1.0;
                 // print elevation and neighbor elevation
                 // println!("Elevation: {}, Neighbor Elevation: {}", elevation, neighbor_elevation);
-                if elevation>0.0 && neighbor_elevation<1.0{
-                    is_beach=true;
+                if elevation > 0.0 && neighbor_elevation < 1.0 {
+                    is_beach = true;
                 }
             }
             let average_elevation = sum_elevation / count;
@@ -327,7 +324,6 @@ impl Tile {
         } else if elevation >= 1 && is_beach {
             //print!("Beach ");
             TerrainType::Beach
-
         } else if elevation < 100 {
             TerrainType::Grass
         } else {
@@ -404,7 +400,6 @@ impl GameObject for GameMap {
     fn update(&self, _world: &World) -> Self {
         // Here you can add the logic to update the game map
         // For now, we'll just return the game map as is
-        // display the game map's updated state
         println!("Game map updated");
         (*self).clone()
     }
@@ -443,7 +438,6 @@ impl GameMap {
 
 
     fn generate_map_image(&self, filename: &str) {
-
         let width = self.width as u32;
         let height = self.height as u32;
         let mut img = ImageBuffer::<Rgb<u8>, _>::new(width, height);
@@ -457,7 +451,7 @@ impl GameMap {
                 TerrainType::Earth | TerrainType::Grass | TerrainType::Mountain => {
                     // generate a shade of green based on the elevation
                     let elevation = tile.elevation as f32 / 100.0;
-                    let color = 100 -(elevation * 255.0) as u8;
+                    let color = 100 - (elevation * 255.0) as u8;
                     Rgb([0, color, 0])
                 }
                 TerrainType::Beach => Color::YELLOW.to_rgb(),
@@ -483,7 +477,7 @@ pub struct Character {
     defense: i32,
     x_position: i32,
     y_position: i32,
-
+    facing: Direction,
     // character has a bag of items
     bag: Vec<Item>,
 
@@ -545,8 +539,29 @@ impl Character {
             }
             Command::Move => {
 
+                // advance in the direction we are facing
+                let (x, y) = (self.x_position + self.facing.get_offset().0, self.y_position + self.facing.get_offset().1);
+                println!("{} moves to ({}, {})", self.name, x, y);
+                // get the tile for x,y
+                let tile = Tile::new(x, y, 2048, 2048);
 
-                (*self).clone()}
+                // if the tile is a boundary do not move
+                if tile.terrain_type == TerrainType::Boundary {
+                    println!("{} cannot move to ({}, {}) because it is a boundary", self.name, x, y);
+                    return (*self).clone();
+                }
+                // if the tile is water do not move
+                if tile.terrain_type == TerrainType::Water {
+                    println!("{} cannot move to ({}, {}) because it is water", self.name, x, y);
+                    return (*self).clone();
+                }
+
+                Character {
+                    x_position: x,
+                    y_position: y,
+                    ..(*self).clone()
+                }
+            }
         }
     }
 }
@@ -683,6 +698,7 @@ pub struct World {
 // Update the world state in a functional way
 impl World {
     pub fn update(&self) -> Self {
+        println!("World updated");
         World {
             height: 2048,
             width: 2048,
@@ -729,33 +745,18 @@ impl World {
     }
 
     fn parse_command(&self, command: &str) -> Command {
-        // handle the quit command
-        if command.trim().eq_ignore_ascii_case("quit") {
-            return Command::Quit;
+        let command = command.trim();
+        let parts: Vec<&str> = command.split_whitespace().collect();
+
+        match parts.get(0) {
+            Some(&"quit") => Command::Quit,
+            Some(&"test") => Command::Test,
+            Some(&"me") => Command::Me,
+            Some(&"move") => Command::Move,
+            Some(&"see") if parts.len() == 2 => Command::See(parts[1].parse().unwrap()),
+            Some(&"look") if parts.len() == 2 => Command::Look(parts[1].parse().unwrap()),
+            _ => Command::Idle,
         }
-        // add the "test" command
-        if command.trim().eq_ignore_ascii_case("test") {
-            return Command::Test;
-        }
-        // add the "me" command
-        if command.trim().eq_ignore_ascii_case("me") {
-            return Command::Me;
-        }
-        // add the see <name> command
-        if command.trim().starts_with("see") {
-            let parts: Vec<&str> = command.trim().split_whitespace().collect();
-            if parts.len() == 2 {
-                return Command::See(parts[1].parse().unwrap());
-            }
-        }
-        // add the look <name> command
-        if command.trim().starts_with("look") {
-            let parts: Vec<&str> = command.trim().split_whitespace().collect();
-            if parts.len() == 2 {
-                return Command::Look(parts[1].parse().unwrap());
-            }
-        }
-        return Command::Idle;
     }
 
     fn execute_command(&mut self, command: Command) {
@@ -786,18 +787,7 @@ impl World {
                 // Here you can add the logic for the test command
                 println!("Test");
                 // get player character
-                let player = self.entities.iter().find_map(|entity| {
-                    match entity {
-                        GameEntity::Character(character) => {
-                            if character.character_type == CharacterType::Player {
-                                Some(character.clone())
-                            } else {
-                                None
-                            }
-                        }
-                        _ => None,
-                    }
-                });
+                let player = self.search_for_player();
                 if let Some(player) = player {
                     println!("Player found: {}", player.name);
                 } else {
@@ -830,10 +820,33 @@ impl World {
                 // look around the player
                 println!("Look around player");
             }
-            Command::Move => {}
+            Command::Move => {
+                let player = self.search_for_player();
+                if let Some(player) = player {
+                    let new_player = player.execute_command(Command::Move);
+                    self.remove_named_character(player.name.clone());
+                    self.add_character(new_player);
+                }
+            }
         }
         // After executing the command, update the world state
         *self = self.update();
+    }
+
+    fn search_for_player(&mut self) -> Option<Character> {
+        let player = self.entities.iter().find_map(|entity| {
+            match entity {
+                GameEntity::Character(character) => {
+                    if character.character_type == CharacterType::Player {
+                        Some(character.clone())
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            }
+        });
+        player
     }
 
     pub fn remove_entity(&mut self, entity_to_remove: &GameEntity) {
@@ -966,8 +979,9 @@ fn main() {
         health: 100,
         attack: 10,
         defense: 5,
-        x_position: 500,
+        x_position: 700,
         y_position: 500,
+        facing: Direction::North,
         bag: Vec::new(),
     };
 
@@ -978,8 +992,9 @@ fn main() {
         health: 50,
         attack: 5,
         defense: 2,
-        x_position: 100,
-        y_position: 100,
+        x_position: 800,
+        y_position: 900,
+        facing: Direction::East,
         bag: Vec::new(),
     };
 
