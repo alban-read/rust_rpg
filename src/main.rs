@@ -16,15 +16,21 @@ use rand::Rng;
 // this is attempt at designing a simple role playing game in Rust
 
 // The game will have the following features:
-// - A player character with attributes such as health, attack, and defense
+// - A player character with attributes such as health.
 // - A simple system where characters interact with each other by trading, attacking, or defending.
 // - Randomly generated characters with different attributes
 // - A simple command based user interface to interact with the game
 
-// This version of the game will be designed using a more functional programming approach, where the game state is immutable and changes are made by creating new instances of objects with updated attributes.
+// This version of the game will be designed using a more functional programming approach,
+// //where the game state is immutable and changes are made by creating new instances of objects with updated attributes.
 // Designing a game in a more functional way in Rust can be challenging due to the language's strict borrowing and mutability rules.
-// Immutable Data: In functional programming, data is immutable. This means that instead of changing the state of an object, you create a new object with the updated state. This can be achieved in Rust using the clone method to create new instances of objects with modified attributes.
-// Advanced Types: Rust has several advanced types that can be used to design your game in a more functional way. For example, Option and Result can be used for error handling instead of using exceptions. Enum can be used to create different types of game objects. Trait can be used to define common behavior for these objects.
+// Immutable Data: In functional programming, data is immutable.
+// This means that instead of changing the state of an object, we create a new object with the updated state.
+// This can be achieved in Rust using the clone method to create new instances of objects with modified attributes.
+// Advanced Types: Rust has several advanced types that can be used to design your game in a more functional way.
+// For example, Option and Result can be used for error handling instead of using exceptions.
+// Enum can be used to create different types of game objects.
+// Trait can be used to define common behavior for these objects.
 // Use of Iterators: Iterators in Rust are lazy, meaning they have no effect until you consume them.
 // They are a central feature of idiomatic, functional Rust code.
 // Use methods like map, filter, and fold to perform operations on game objects
@@ -32,6 +38,8 @@ use rand::Rng;
 
 // ===========================================================================
 // Direction concepts
+// a character is facing in one of the eight directions.
+
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Direction {
@@ -197,10 +205,13 @@ pub enum Command {
 }
 
 
+// the main Perlin noise generator
 static PERLIN: Lazy<Perlin> = Lazy::new(|| {
     Perlin::new(7243)
 });
 
+
+// things are drawn on the map in different colours
 // colours by name
 #[derive(Debug, Clone, Copy)]
 pub struct Color {
@@ -313,7 +324,7 @@ impl Tile {
 
 
         let mut calculate_elevation = |x: f64, y: f64, width: i32, height: i32| -> i32 {
-            let neighbors = [(x - 1.0, y), (x + 1.0, y), (x, y - 1.0), (x, y + 1.0)]; // left, right, up, down neighbors
+            let neighbors = [(x - 1.0, y), (x + 1.0, y), (x, y - 1.0), (x, y + 1.0)]; // only left, right, up, down neighbors
             let elevation = calculate_biased_elevation(x as f64, y as f64, &neighbors, width as f64, height as f64);
             elevation as i32
         };
@@ -472,6 +483,8 @@ pub enum CharacterType {
 pub struct Character {
     character_type: CharacterType,
     name: String,
+    energy: i32,
+    hydration: i32,
     health: i32,
     attack: i32,
     defense: i32,
@@ -568,8 +581,8 @@ impl Character {
 
 impl fmt::Display for Character {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Character {{ character_type: {:?}, name: {}, health: {}, attack: {}, defense: {}, x_position: {}, y_position: {}, bag: {:?} }}",
-               self.character_type, self.name, self.health, self.attack, self.defense, self.x_position, self.y_position, self.bag)
+        write!(f, "Character {{ character_type: {:?}, name: {}, health: {}, energy: {}, hydration: {}, x_position: {}, y_position: {}, bag: {:?} }}",
+               self.character_type, self.name, self.health, self.energy, self.hydration, self.x_position, self.y_position, self.bag)
     }
 }
 
@@ -577,7 +590,22 @@ impl GameObject for Character {
     fn update(&self, _world: &World) -> Self {
         // display the character's updated state
         println!("{} updated", self.name);
-        (*self).clone()
+        // reduce energy and hydration
+        let energy = max(0, self.energy - 1);
+        let hydration = max(0, self.hydration - 1);
+        // reduce health if energy or hydration is zero
+        let health = if energy == 0 || hydration == 0 {
+            max(0, self.health - 1)
+        } else {
+            self.health
+        };
+        // create a new character with the updated attributes
+        Character {
+            energy,
+            hydration,
+            health,
+            ..(*self).clone()
+        }
     }
 
     fn get_tile(&self, x: i32, y: i32) -> Tile {
@@ -976,6 +1004,8 @@ fn main() {
     let player = Character {
         character_type: CharacterType::Player,
         name: "PlayerOne".to_string(),
+        energy: 1000,
+        hydration: 1000,
         health: 100,
         attack: 10,
         defense: 5,
@@ -989,7 +1019,9 @@ fn main() {
     let troll = Character {
         character_type: CharacterType::Troll,
         name: "TrollOne".to_string(),
-        health: 50,
+        energy: 1000,
+        hydration: 1000,
+        health: 150,
         attack: 5,
         defense: 2,
         x_position: 800,
