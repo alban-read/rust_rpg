@@ -3,6 +3,7 @@
 use std::sync::mpsc;
 use std::{io, thread};
 use std::cmp::max;
+use std::collections::HashMap;
 use std::time::Duration;
 use std::fmt;
 use noise::{NoiseFn, Perlin};
@@ -17,6 +18,7 @@ use rand::Rng;
 
 // The game will have the following features:
 // - A player character with attributes such as health.
+// - characters have energy and hydration attributes that decrease over time.
 // - A simple system where characters interact with each other by trading, attacking, or defending.
 // - Randomly generated characters with different attributes
 // - A simple command based user interface to interact with the game
@@ -551,38 +553,58 @@ impl Character {
                 (*self).clone()
             }
             Command::Move => {
-
-                // advance in the direction we are facing
-                let (x, y) = (self.x_position + self.facing.get_offset().0, self.y_position + self.facing.get_offset().1);
-                println!("{} moves to ({}, {})", self.name, x, y);
-                // get the tile for x,y
-                let tile = Tile::new(x, y, 2048, 2048);
-
-                // if the tile is a boundary do not move
-                if tile.terrain_type == TerrainType::Boundary {
-                    println!("{} cannot move to ({}, {}) because it is a boundary", self.name, x, y);
-                    return (*self).clone();
-                }
-                // if the tile is water do not move
-                if tile.terrain_type == TerrainType::Water {
-                    println!("{} cannot move to ({}, {}) because it is water", self.name, x, y);
-                    return (*self).clone();
-                }
-
-                Character {
-                    x_position: x,
-                    y_position: y,
-                    ..(*self).clone()
+                match self.do_move() {
+                    Ok(value) => value,
+                    Err(value) => return value,
                 }
             }
         }
+    }
+
+    fn do_move(&self) -> Result<Character, Character> {
+    // advance in the direction we are facing
+        let (x, y) = (self.x_position + self.facing.get_offset().0, self.y_position + self.facing.get_offset().1);
+        println!("{} moves to ({}, {})", self.name, x, y);
+        // get the tile for x,y
+        let tile = Tile::new(x, y, 2048, 2048);
+
+        // if the tile is a boundary do not move
+        if tile.terrain_type == TerrainType::Boundary {
+            println!("{} cannot move to ({}, {}) because it is a boundary", self.name, x, y);
+            return Err((*self).clone());
+        }
+        // if the tile is water do not move
+        if tile.terrain_type == TerrainType::Water {
+            println!("{} cannot move to ({}, {}) because it is water", self.name, x, y);
+            return Err((*self).clone());
+        }
+
+        // what is the elevation difference between the current tile and the new tile
+        let elevation_diff = tile.elevation - self.get_tile(self.x_position, self.y_position).elevation;
+        let mut energy = self.energy;
+        energy = energy-1;
+        // if the elevation difference is greater than 1, reduce energy further
+        if elevation_diff.abs() > 1 {
+            energy = energy - (elevation_diff.abs() / 2);
+            println!("{} moves to ({}, {}) with an elevation difference of {} and energy {}", self.name, x, y, elevation_diff, energy);
+        }
+
+
+        Ok(Character {
+            x_position: x,
+            y_position: y,
+            energy,
+            hydration: self.hydration-1,
+            ..(*self).clone()
+        })
     }
 }
 
 impl fmt::Display for Character {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Character {{ character_type: {:?}, name: {}, health: {}, energy: {}, hydration: {}, x_position: {}, y_position: {}, bag: {:?} }}",
-               self.character_type, self.name, self.health, self.energy, self.hydration, self.x_position, self.y_position, self.bag)
+        write!(f, "Character {{ character_type: {:?}, name: {}, health: {}, energy: {}, hydration: {}, x: {}, y: {}, elevation: {}, bag: {:?} }}",
+               self.character_type, self.name, self.health, self.energy, self.hydration,
+               self.x_position, self.y_position, self.get_tile(self.x_position, self.y_position).elevation, self.bag)
     }
 }
 
@@ -718,6 +740,8 @@ pub struct World {
     width: i32,
     entities: Vec<GameEntity>,
     game_map: GameMap,
+    items_by_name: HashMap<String, Item>,
+    items_by_position: HashMap<(i32, i32), Item>,
 
 
     // other world state...
@@ -734,6 +758,8 @@ impl World {
             // create new game map with updated tiles
             game_map: GameMap::new(self.width, self.height),
             // other world state...
+            items_by_name: self.items_by_name.clone(),
+            items_by_position: self.items_by_position.clone(),
         }
     }
 
@@ -990,6 +1016,31 @@ impl World {
             }
         }
     }
+
+    pub fn scatter_items(&mut self, num_items: i32) {
+        let mut rng = rand::thread_rng();
+
+        for _ in 0..num_items {
+            let x = rng.gen_range(0..self.width);
+            let y = rng.gen_range(0..self.height);
+            let item = Item::new(ItemType::Food, "Apple", 10, x, y);
+
+            self.items_by_name.insert(item.name.clone(), item.clone());
+            self.items_by_position.insert((x, y), item);
+        }
+    }
+
+    pub fn find_item_by_name(&self, name: &str) -> Option<&Item> {
+        self.items_by_name.get(name)
+    }
+
+    pub fn find_item_by_position(&self, x: i32, y: i32) -> Option<&Item> {
+        self.items_by_position.get(&(x, y))
+    }
+
+
+
+    // end of the world
 }
 
 fn main() {
@@ -999,6 +1050,8 @@ fn main() {
         entities: Vec::new(),
         game_map: GameMap::new(2048, 2048),
         // other world state...
+        items_by_name: HashMap::new(),
+        items_by_position: HashMap::new(),
     };
 
     let player = Character {
@@ -1055,6 +1108,7 @@ fn main() {
         world.add_item(item);
     }
 
+    world.scatter_items(10000);
 
     world.game_map.generate_map_image("elevation_map.png");
 
