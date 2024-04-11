@@ -1,7 +1,9 @@
 // Path: src/main.rs
 
 use std::sync::mpsc;
-use std::{io, thread};
+use std::io;
+use std::io::Write;
+use std::thread;
 use std::cmp::max;
 use std::collections::HashMap;
 use std::time::Duration;
@@ -850,8 +852,24 @@ impl World {
             }
             Command::AddItem(_) => {}
             Command::Me => {
-                // find and display the player
-                self.find_and_display_player();
+                // Find the player once and reuse the result
+                let player_opt = self.search_for_player();
+
+                // Display the player
+                if let Some(player) = player_opt.as_ref() {
+                    println!("{}", player);
+                }
+
+                // Get the player's position and items at that position
+                if let Some(player) = player_opt {
+                    let (x, y) = (player.x_position, player.y_position);
+                    // Use the Debug trait's fmt method instead of println!
+                    let _ = write!(io::stdout(), "{:?}", player.get_tile(x, y));
+                    if let Some(item) = self.items_by_position.get(&(x, y)) {
+                        println!("Item found: {:?}", item);
+                    }
+                }
+
             }
             Command::See(name) => {
                 // find and display the character by name
